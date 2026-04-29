@@ -11,6 +11,12 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List
 
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _HAS_DOTENV = True
+except ImportError:
+    _HAS_DOTENV = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +82,26 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
     never hard-coded in YAML that may be committed to source control.
     """
     config = AppConfig()
+
+    # 0. Load .env file so environment variables are available before reading YAML
+    #    Search for .env relative to the config file's directory first,
+    #    then fall back to config/.env from the current working directory.
+    if _HAS_DOTENV:
+        env_candidates = [
+            Path(config_path).parent / ".env",
+            Path("config/.env"),
+            Path(".env"),
+        ]
+        for env_path in env_candidates:
+            if env_path.exists():
+                _load_dotenv(env_path, override=False)  # override=False: system env vars win
+                logger.debug("Loaded .env from: %s", env_path)
+                break
+    else:
+        logger.warning(
+            "python-dotenv not installed — .env file will not be loaded. "
+            "Run: pip install python-dotenv"
+        )
 
     # 1. Load YAML
     yaml_path = Path(config_path)

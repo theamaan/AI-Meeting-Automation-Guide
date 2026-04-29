@@ -84,8 +84,15 @@ class EmailService:
 
         except smtplib.SMTPAuthenticationError:
             logger.error(
-                "SMTP authentication failed. "
-                "For Office 365, ensure Modern Auth is enabled or use an App Password."
+                "SMTP authentication failed for %s.\n"
+                "  Office 365 fix options:\n"
+                "    1. Ask your IT admin to enable SMTP AUTH on your mailbox:\n"
+                "       Microsoft 365 admin → Users → %s → Mail → Manage email apps\n"
+                "       → tick 'Authenticated SMTP'\n"
+                "    2. OR use an App Password if your account has MFA enabled:\n"
+                "       myaccount.microsoft.com → Security → App passwords → New\n"
+                "    3. OR set EMAIL_PASSWORD in config/.env to your App Password.",
+                self.username, self.username
             )
             return False
         except smtplib.SMTPException as exc:

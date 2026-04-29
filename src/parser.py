@@ -171,6 +171,23 @@ class TranscriptParser:
             )
 
         logger.info(f"Transcribing {Path(file_path).name} — this may take several minutes...")
+
+        # Verify the file has an audio stream before loading Whisper.
+        # Teams sometimes saves video-only .mp4 files (e.g. screen recordings
+        # with no mic), or the container may have no decodable audio track.
+        try:
+            import av as _av
+            with _av.open(file_path) as _container:
+                audio_streams = [s for s in _container.streams if s.type == "audio"]
+            if not audio_streams:
+                raise RuntimeError(
+                    f"No audio stream found in {Path(file_path).name}. "
+                    "The file may be video-only or corrupted. "
+                    "Use the matching .vtt transcript file instead."
+                )
+        except ImportError:
+            pass  # av not available — let Whisper try and fail with its own message
+
         model = WhisperModel("base", device="cpu", compute_type="int8")
         segments_iter, info = model.transcribe(
             file_path,

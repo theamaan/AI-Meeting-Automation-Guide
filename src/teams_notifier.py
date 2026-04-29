@@ -342,8 +342,10 @@ class TeamsNotifier:
                 timeout=self.timeout,
                 headers={"Content-Type": "application/json"},
             )
-            if resp.status_code == 200:
-                logger.info("Teams card sent successfully.")
+            # 200 = old Connector webhook success
+            # 202 = new Power Automate Workflows webhook accepted
+            if resp.status_code in (200, 202):
+                logger.info("Teams card sent successfully (HTTP %d).", resp.status_code)
                 return True
             else:
                 logger.error(
