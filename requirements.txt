@@ -7,7 +7,11 @@
 watchdog==4.0.1
 
 # --- Audio Transcription (used when only .mp4 is available) ---
-faster-whisper==1.0.3
+# NOTE: Do NOT pin to 1.0.3 on Python 3.13/Windows.
+# faster-whisper 1.0.3 requires av<13, which has no pre-built cp313 wheel
+# and fails to compile without Microsoft C++ Build Tools.
+# >=1.1.0 supports av>=14 which ships a cp313 Windows wheel.
+faster-whisper>=1.1.0
 
 # --- VTT Transcript Parsing ---
 webvtt-py==0.4.6
