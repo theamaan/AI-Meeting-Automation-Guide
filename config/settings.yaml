@@ -1,0 +1,51 @@
+# ============================================================
+# AI Meeting Intelligence System — Settings
+# ============================================================
+# IMPORTANT: Never put passwords or webhook URLs here.
+# Use environment variables for ALL secrets.
+# See config/.env.example for environment variable names.
+# ============================================================
+
+watcher:
+  # Absolute path to your OneDrive-synced recordings folder
+  watch_path: "C:/Users/YourName/OneDrive - YourCompany/Recordings"
+  # Wait this many seconds after a file appears before processing
+  # (ensures OneDrive sync is fully complete)
+  delay_seconds: 300
+
+ollama:
+  # Local Ollama model — must be pulled first: ollama pull gpt-oss:120b-cloud
+  model: "gpt-oss:120b-cloud"
+  base_url: "http://localhost:11434"
+  # Low temperature = consistent, factual, non-creative output
+  temperature: 0.1
+  max_retries: 3
+  # Seconds before giving up on a single LLM call (large models are slow)
+  timeout: 300
+
+teams:
+  # Set TEAMS_WEBHOOK_URL environment variable — do not put the URL here
+  webhook_url: ""
+  enabled: true
+
+email:
+  # Office 365 (default) — change to smtp.gmail.com / port 587 for Gmail
+  smtp_host: "smtp.office365.com"
+  smtp_port: 587
+  use_tls: true
+  sender_name: "AI Meeting System"
+  # Set EMAIL_USERNAME and EMAIL_PASSWORD environment variables
+  username: ""
+  password: ""
+  enabled: true
+  recipients:
+    - "team-lead@yourcompany.com"
+    - "dev-team@yourcompany.com"
+    # Add all team members who should receive the MOM email
+
+# Storage
+db_path: "data/meetings.db"
+
+# Logging
+log_level: "INFO"   # DEBUG | INFO | WARNING | ERROR
+log_file: "logs/meeting_system.log"

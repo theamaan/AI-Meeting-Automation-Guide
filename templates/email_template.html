@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meeting Minutes — {{ mom.meeting_title }}</title>
+  <style>
+    /* ── Reset & Base ── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: #f0f2f5;
+      color: #1a1a2e;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    a { color: #0078d4; text-decoration: none; }
+
+    /* ── Layout ── */
+    .wrapper   { max-width: 780px; margin: 24px auto; }
+    .card      { background: #ffffff; border-radius: 8px; overflow: hidden;
+                 box-shadow: 0 2px 8px rgba(0,0,0,.12); margin-bottom: 16px; }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, #0078d4 0%, #00437a 100%);
+      color: #ffffff;
+      padding: 28px 32px;
+    }
+    .header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .header .meta { font-size: 13px; opacity: .85; }
+    .status-badge {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+    .badge-clear  { background: #107c10; color: #fff; }
+    .badge-issues { background: #d83b01; color: #fff; }
+
+    /* ── Section headings ── */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: #605e5c;
+      padding: 16px 24px 8px;
+      border-bottom: 1px solid #edebe9;
+    }
+
+    /* ── Team summary ── */
+    .team-summary {
+      padding: 16px 24px;
+      font-size: 14px;
+      color: #323130;
+    }
+    .issues-banner {
+      background: #fde7e9;
+      border-left: 4px solid #d83b01;
+      padding: 10px 20px;
+      margin: 0 24px 16px;
+      border-radius: 0 4px 4px 0;
+      font-size: 13px;
+      color: #a4262c;
+    }
+
+    /* ── Person cards ── */
+    .person-card  { border: 1px solid #edebe9; border-radius: 6px;
+                    margin: 0 16px 16px; overflow: hidden; }
+    .person-header {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      background: #f3f2f1;
+      border-bottom: 1px solid #edebe9;
+    }
+    .person-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #0078d4; color: #fff;
+      font-size: 15px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      margin-right: 12px; flex-shrink: 0;
+    }
+    .person-name  { font-weight: 700; font-size: 15px; }
+    .person-summary { font-size: 12px; color: #605e5c; margin-top: 2px; }
+    .blocker-indicator {
+      margin-left: auto;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .has-blocker  { background: #fde7e9; color: #a4262c; }
+    .no-blocker   { background: #dff6dd; color: #107c10; }
+
+    .person-body  { padding: 12px 16px; }
+
+    /* ── Item sections ── */
+    .item-section { margin-bottom: 14px; }
+    .item-section:last-child { margin-bottom: 0; }
+    .item-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .7px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .label-yesterday { color: #0078d4; }
+    .label-today     { color: #107c10; }
+    .label-actions   { color: #8764b8; }
+    .label-blockers  { color: #d83b01; }
+
+    .item-list { list-style: none; padding: 0; }
+    .item-list li {
+      padding: 4px 0 4px 16px;
+      position: relative;
+      font-size: 13px;
+      color: #323130;
+    }
+    .item-list li::before {
+      content: "›";
+      position: absolute;
+      left: 4px;
+      color: #a19f9d;
+    }
+    .item-list li.blocker-item { color: #a4262c; }
+    .item-list li.blocker-item::before { content: "⚠"; left: 2px; }
+
+    /* ── Key decisions ── */
+    .decisions-list { padding: 8px 24px 16px; }
+    .decisions-list li {
+      padding: 4px 0;
+      font-size: 13px;
+      list-style: none;
+      padding-left: 20px;
+      position: relative;
+    }
+    .decisions-list li::before { content: "🔑"; position: absolute; left: 0; }
+
+    /* ── Divider ── */
+    .divider { border: none; border-top: 1px solid #edebe9; margin: 0 24px; }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: #a19f9d;
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Header ── -->
+  <div class="card">
+    <div class="header">
+      <h1>📋 Minutes of Meeting</h1>
+      <div class="meta">
+        {{ mom.meeting_title }} &nbsp;•&nbsp; {{ mom.meeting_date }}
+      </div>
+      {% if mom.overall_status == 'ALL_CLEAR' %}
+        <span class="status-badge badge-clear">✅ ALL CLEAR</span>
+      {% else %}
+        <span class="status-badge badge-issues">⚠️ HAS ISSUES</span>
+      {% endif %}
+    </div>
+
+    <!-- Team Summary -->
+    <div class="section-title">🏢 Team Summary</div>
+    <div class="team-summary">{{ mom.team_summary }}</div>
+
+    {% if mom.overall_status != 'ALL_CLEAR' and mom.status_reason %}
+    <div class="issues-banner">⚠️ &nbsp;{{ mom.status_reason }}</div>
+    {% endif %}
+  </div>
+
+  <!-- ── Team Members ── -->
+  <div class="card">
+    <div class="section-title">👥 Individual Updates</div>
+    <div style="height:8px;"></div>
+
+    {% for person in mom.participants %}
+    <div class="person-card">
+      <div class="person-header">
+        <div class="person-avatar">{{ person.name[0] | upper }}</div>
+        <div>
+          <div class="person-name">{{ person.name }}</div>
+          {% if person.progress_summary %}
+          <div class="person-summary">{{ person.progress_summary[:80] }}{% if person.progress_summary|length > 80 %}…{% endif %}</div>
+          {% endif %}
+        </div>
+        {% if person.blockers %}
+          <span class="blocker-indicator has-blocker">🔴 Has Blockers</span>
+        {% else %}
+          <span class="blocker-indicator no-blocker">🟢 Clear</span>
+        {% endif %}
+      </div>
+
+      <div class="person-body">
+        {% if person.yesterday %}
+        <div class="item-section">
+          <div class="item-label label-yesterday">📅 Yesterday</div>
+          <ul class="item-list">
+            {% for item in person.yesterday %}<li>{{ item }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if person.today %}
+        <div class="item-section">
+          <div class="item-label label-today">🎯 Today</div>
+          <ul class="item-list">
+            {% for item in person.today %}<li>{{ item }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if person.action_items %}
+        <div class="item-section">
+          <div class="item-label label-actions">✅ Action Items</div>
+          <ul class="item-list">
+            {% for item in person.action_items %}<li>{{ item }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if person.blockers %}
+        <div class="item-section">
+          <div class="item-label label-blockers">🚫 Blockers</div>
+          <ul class="item-list">
+            {% for item in person.blockers %}<li class="blocker-item">{{ item }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ── Key Decisions ── -->
+  {% if mom.key_decisions %}
+  <div class="card">
+    <div class="section-title">🔑 Key Decisions</div>
+    <ul class="decisions-list">
+      {% for decision in mom.key_decisions %}
+      <li>{{ decision }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <!-- ── Footer ── -->
+  <div class="footer">
+    Generated by <strong>AI Meeting Intelligence System</strong> on {{ generated_at }}<br/>
+    This is an automatically generated summary. Please verify critical information.
+  </div>
+
+</div>
+</body>
+</html>

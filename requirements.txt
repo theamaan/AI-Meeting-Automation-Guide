@@ -1,0 +1,36 @@
+# ============================================================
+# AI Meeting Intelligence System — Requirements
+# ============================================================
+# Install: pip install -r requirements.txt
+
+# --- File Watching ---
+watchdog==4.0.1
+
+# --- Audio Transcription (used when only .mp4 is available) ---
+faster-whisper==1.0.3
+
+# --- VTT Transcript Parsing ---
+webvtt-py==0.4.6
+
+# --- DOCX Parsing ---
+python-docx==1.1.2
+
+# --- LLM / Ollama Client ---
+requests==2.32.3
+
+# --- Email Templating ---
+Jinja2==3.1.4
+MarkupSafe==2.1.5
+
+# --- YAML Configuration ---
+PyYAML==6.0.1
+
+# --- Database ---
+# sqlite3 is built-in to Python — no extra install needed
+
+# --- Utilities ---
+python-dotenv==1.0.1
+
+# --- Testing ---
+pytest==8.2.2
+pytest-mock==3.14.0

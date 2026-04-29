@@ -1,0 +1,480 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+
+    // ── HEADER ──────────────────────────────────────────────────────────────
+    {
+      "type": "Container",
+      "style": "emphasis",
+      "bleed": true,
+      "items": [
+        {
+          "type": "ColumnSet",
+          "columns": [
+            {
+              "type": "Column",
+              "width": "stretch",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "📋  Daily Standup Report",
+                  "size": "Large",
+                  "weight": "Bolder",
+                  "color": "Accent"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "Sprint Planning  •  2026-04-29",
+                  "size": "Small",
+                  "isSubtle": true,
+                  "spacing": "None",
+                  "wrap": true
+                }
+              ]
+            },
+            {
+              "type": "Column",
+              "width": "auto",
+              "verticalContentAlignment": "Center",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "⚠️  HAS ISSUES",
+                  "color": "Attention",
+                  "weight": "Bolder",
+                  "horizontalAlignment": "Right"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+
+    // ── ISSUES BANNER (only rendered when overall_status = HAS_ISSUES) ───────
+    {
+      "type": "Container",
+      "style": "attention",
+      "spacing": "Small",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "⚠️  2 blockers reported — requires immediate attention",
+          "wrap": true,
+          "color": "Attention"
+        }
+      ]
+    },
+
+    // ── TEAM SUMMARY ────────────────────────────────────────────────────────
+    {
+      "type": "Container",
+      "spacing": "Medium",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "🏢  Team Summary",
+          "weight": "Bolder",
+          "size": "Medium"
+        },
+        {
+          "type": "TextBlock",
+          "text": "The team made solid progress on the authentication module. Two members are blocked on third-party API access. Overall velocity is on track for sprint goals.",
+          "wrap": true,
+          "isSubtle": true
+        }
+      ]
+    },
+
+    // ── MEMBER BUTTONS ───────────────────────────────────────────────────────
+    {
+      "type": "TextBlock",
+      "text": "👥  Team Members — click to expand",
+      "weight": "Bolder",
+      "size": "Medium",
+      "spacing": "Medium",
+      "separator": true
+    },
+
+    // Row 1: Alice, Bob, Carol
+    {
+      "type": "ColumnSet",
+      "spacing": "Small",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "stretch",
+          "style": "emphasis",
+          "selectAction": {
+            "type": "Action.ToggleVisibility",
+            "targetElements": [ "details_alice_johnson" ]
+          },
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "🟢  Alice Johnson",
+              "weight": "Bolder",
+              "horizontalAlignment": "Center",
+              "wrap": false
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "stretch",
+          "style": "emphasis",
+          "selectAction": {
+            "type": "Action.ToggleVisibility",
+            "targetElements": [ "details_bob_smith" ]
+          },
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "🔴  Bob Smith",
+              "weight": "Bolder",
+              "horizontalAlignment": "Center",
+              "wrap": false
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "stretch",
+          "style": "emphasis",
+          "selectAction": {
+            "type": "Action.ToggleVisibility",
+            "targetElements": [ "details_carol_lee" ]
+          },
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "🔴  Carol Lee",
+              "weight": "Bolder",
+              "horizontalAlignment": "Center",
+              "wrap": false
+            }
+          ]
+        }
+      ]
+    },
+
+    // Row 2: David (single member — pad with blank columns if needed)
+    {
+      "type": "ColumnSet",
+      "spacing": "Small",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "stretch",
+          "style": "emphasis",
+          "selectAction": {
+            "type": "Action.ToggleVisibility",
+            "targetElements": [ "details_david_khan" ]
+          },
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "🟢  David Khan",
+              "weight": "Bolder",
+              "horizontalAlignment": "Center",
+              "wrap": false
+            }
+          ]
+        },
+        { "type": "Column", "width": "stretch", "items": [] },
+        { "type": "Column", "width": "stretch", "items": [] }
+      ]
+    },
+
+    // ── ALICE JOHNSON — DETAIL CONTAINER (hidden by default) ─────────────────
+    {
+      "type": "Container",
+      "id": "details_alice_johnson",
+      "isVisible": false,
+      "style": "emphasis",
+      "spacing": "Medium",
+      "separator": true,
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "📊  Alice Johnson",
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "Accent"
+        },
+        {
+          "type": "TextBlock",
+          "text": "Alice completed the login flow and is on track for today's demo. No blockers.",
+          "wrap": true,
+          "isSubtle": true,
+          "spacing": "Small"
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "📅  Yesterday", "weight": "Bolder", "color": "Good", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Completed OAuth2 login flow", "wrap": true, "spacing": "None" },
+            { "type": "TextBlock", "text": "• Fixed token refresh bug #421", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "🎯  Today", "weight": "Bolder", "color": "Accent", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Implement role-based access control", "wrap": true, "spacing": "None" },
+            { "type": "TextBlock", "text": "• Prepare demo for stakeholder review", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "✅  Action Items", "weight": "Bolder", "color": "Warning", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Send demo recording to product team — by EOD today", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "TextBlock",
+          "text": "🚫  Blockers:  None",
+          "color": "Good",
+          "isSubtle": true,
+          "spacing": "Small"
+        }
+      ]
+    },
+
+    // ── BOB SMITH — DETAIL CONTAINER ─────────────────────────────────────────
+    {
+      "type": "Container",
+      "id": "details_bob_smith",
+      "isVisible": false,
+      "style": "emphasis",
+      "spacing": "Medium",
+      "separator": true,
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "📊  Bob Smith",
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "Attention"
+        },
+        {
+          "type": "TextBlock",
+          "text": "Bob is blocked on vendor API credentials. Cannot proceed with payment gateway integration until unblocked.",
+          "wrap": true,
+          "isSubtle": true,
+          "spacing": "Small"
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "📅  Yesterday", "weight": "Bolder", "color": "Good", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Set up payment gateway SDK scaffolding", "wrap": true, "spacing": "None" },
+            { "type": "TextBlock", "text": "• Reviewed Stripe API documentation", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "🎯  Today", "weight": "Bolder", "color": "Accent", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Waiting on vendor API credentials", "wrap": true, "spacing": "None" },
+            { "type": "TextBlock", "text": "• Writing unit tests for payment models in the meantime", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "✅  Action Items", "weight": "Bolder", "color": "Warning", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Follow up with vendor by 2 PM today", "wrap": true, "spacing": "None" },
+            { "type": "TextBlock", "text": "• Escalate to manager if not resolved by EOD", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "🚫  Blockers", "weight": "Bolder", "color": "Attention", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Waiting for Stripe sandbox API key from vendor team", "wrap": true, "spacing": "None", "color": "Attention" }
+          ]
+        }
+      ]
+    },
+
+    // ── CAROL LEE — DETAIL CONTAINER ─────────────────────────────────────────
+    {
+      "type": "Container",
+      "id": "details_carol_lee",
+      "isVisible": false,
+      "style": "emphasis",
+      "spacing": "Medium",
+      "separator": true,
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "📊  Carol Lee",
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "Attention"
+        },
+        {
+          "type": "TextBlock",
+          "text": "Carol is working on CI/CD pipeline but is blocked by missing AWS permissions.",
+          "wrap": true,
+          "isSubtle": true,
+          "spacing": "Small"
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "📅  Yesterday", "weight": "Bolder", "color": "Good", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Configured GitHub Actions workflow YAML", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "🎯  Today", "weight": "Bolder", "color": "Accent", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Test deployment pipeline once permissions are granted", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "✅  Action Items", "weight": "Bolder", "color": "Warning", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Raise AWS IAM permissions ticket — today", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "🚫  Blockers", "weight": "Bolder", "color": "Attention", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Missing AWS IAM permissions for ECR and ECS", "wrap": true, "spacing": "None", "color": "Attention" }
+          ]
+        }
+      ]
+    },
+
+    // ── DAVID KHAN — DETAIL CONTAINER ────────────────────────────────────────
+    {
+      "type": "Container",
+      "id": "details_david_khan",
+      "isVisible": false,
+      "style": "emphasis",
+      "spacing": "Medium",
+      "separator": true,
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "📊  David Khan",
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "Accent"
+        },
+        {
+          "type": "TextBlock",
+          "text": "David completed QA testing for the last sprint and is starting performance benchmarks today.",
+          "wrap": true,
+          "isSubtle": true,
+          "spacing": "Small"
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "📅  Yesterday", "weight": "Bolder", "color": "Good", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Completed 45 test cases for user module", "wrap": true, "spacing": "None" },
+            { "type": "TextBlock", "text": "• Filed 3 bug reports", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "🎯  Today", "weight": "Bolder", "color": "Accent", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Start performance and load testing", "wrap": true, "spacing": "None" },
+            { "type": "TextBlock", "text": "• Set up k6 test scripts", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "Container",
+          "spacing": "Small",
+          "items": [
+            { "type": "TextBlock", "text": "✅  Action Items", "weight": "Bolder", "color": "Warning", "spacing": "Small" },
+            { "type": "TextBlock", "text": "• Share load test results by end of week", "wrap": true, "spacing": "None" }
+          ]
+        },
+        {
+          "type": "TextBlock",
+          "text": "🚫  Blockers:  None",
+          "color": "Good",
+          "isSubtle": true,
+          "spacing": "Small"
+        }
+      ]
+    },
+
+    // ── KEY DECISIONS ────────────────────────────────────────────────────────
+    {
+      "type": "Container",
+      "spacing": "Medium",
+      "separator": true,
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "🔑  Key Decisions",
+          "weight": "Bolder",
+          "size": "Medium"
+        },
+        { "type": "TextBlock", "text": "• Demo moved from Friday to Monday to allow for blocker resolution", "wrap": true },
+        { "type": "TextBlock", "text": "• Bob to use mock payment API if vendor credentials not received by EOD", "wrap": true }
+      ]
+    },
+
+    // ── FOOTER ───────────────────────────────────────────────────────────────
+    {
+      "type": "Container",
+      "style": "emphasis",
+      "spacing": "Medium",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "AI Meeting Intelligence System  •  Generated 2026-04-29 10:15",
+          "size": "Small",
+          "isSubtle": true,
+          "horizontalAlignment": "Center"
+        }
+      ]
+    }
+
+  ],
+
+  // ── CARD-LEVEL ACTIONS ───────────────────────────────────────────────────
+  "actions": [
+    {
+      "type": "Action.ToggleVisibility",
+      "title": "📋  Expand / Collapse All Members",
+      "targetElements": [
+        "details_alice_johnson",
+        "details_bob_smith",
+        "details_carol_lee",
+        "details_david_khan"
+      ]
+    }
+  ],
+
+  "msteams": {
+    "width": "Full"
+  }
+}
