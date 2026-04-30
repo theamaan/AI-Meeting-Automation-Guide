@@ -40,7 +40,7 @@ class TeamsNotifier:
 
     # ── Card Builder ──────────────────────────────────────────
 
-    def _build_payload(self, mom: Dict) -> Dict:
+    def _build_payload(self, mom: Dict) -> Dict:  # noqa: C901
         participants  = mom.get("participants", [])
         status        = mom.get("overall_status", "ALL_CLEAR")
         status_reason = mom.get("status_reason", "")
@@ -49,9 +49,25 @@ class TeamsNotifier:
         date          = mom.get("meeting_date", datetime.now().strftime("%B %d, %Y"))
         decisions     = mom.get("key_decisions", [])
 
-        is_clear       = status == "ALL_CLEAR"
-        status_color   = "good" if is_clear else "attention"
-        status_label   = "✅  ALL CLEAR" if is_clear else "⚠️  HAS ISSUES"
+        is_clear      = status == "ALL_CLEAR"
+        status_emoji  = "✅" if is_clear else "⚠️"
+        status_label  = "ALL CLEAR" if is_clear else "HAS ISSUES"
+        status_color  = "Good" if is_clear else "Attention"
+
+        # ── Stats ─────────────────────────────────────────────
+        total         = len(participants)
+        blocker_count = sum(1 for p in participants if p.get("blockers"))
+        present_count = sum(1 for p in participants if p.get("yesterday") or p.get("today"))
+        absent_count  = total - present_count
+        stats_parts   = []
+        if present_count: stats_parts.append(f"{present_count} present")
+        if absent_count:  stats_parts.append(f"{absent_count} absent")
+        if blocker_count:
+            stats_parts.append(f"{blocker_count} 🔴 blocker{'s' if blocker_count != 1 else ''}")
+        stats_text = "  •  ".join(stats_parts) if stats_parts else f"{total} participants"
+
+        # Pre-compute all panel IDs for accordion targeting
+        all_pids = [self._safe_id(p.get("name", "")) for p in participants]
 
         body: List[Dict] = []
 
@@ -60,44 +76,55 @@ class TeamsNotifier:
             "type": "Container",
             "style": "emphasis",
             "bleed": True,
-            "items": [{
-                "type": "ColumnSet",
-                "columns": [
-                    {
-                        "type": "Column",
-                        "width": "stretch",
-                        "items": [
-                            {
+            "items": [
+                {
+                    "type": "ColumnSet",
+                    "columns": [
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"📋  {title}",
+                                    "size": "Large",
+                                    "weight": "Bolder",
+                                    "color": "Accent",
+                                    "wrap": True
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": date,
+                                    "size": "Small",
+                                    "isSubtle": True,
+                                    "spacing": "None"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Column",
+                            "width": "auto",
+                            "verticalContentAlignment": "Top",
+                            "items": [{
                                 "type": "TextBlock",
-                                "text": "📋  Daily Standup Report",
-                                "size": "Large",
+                                "text": f"{status_emoji}  {status_label}",
+                                "color": status_color,
                                 "weight": "Bolder",
-                                "color": "Accent"
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": f"{title}  •  {date}",
                                 "size": "Small",
-                                "isSubtle": True,
-                                "spacing": "None",
-                                "wrap": True
-                            }
-                        ]
-                    },
-                    {
-                        "type": "Column",
-                        "width": "auto",
-                        "verticalContentAlignment": "Center",
-                        "items": [{
-                            "type": "TextBlock",
-                            "text": status_label,
-                            "color": status_color,
-                            "weight": "Bolder",
-                            "horizontalAlignment": "Right"
-                        }]
-                    }
-                ]
-            }]
+                                "horizontalAlignment": "Right"
+                            }]
+                        }
+                    ]
+                },
+                {
+                    "type": "TextBlock",
+                    "text": stats_text,
+                    "size": "Small",
+                    "isSubtle": True,
+                    "spacing": "Small",
+                    "wrap": True
+                }
+            ]
         })
 
         # ── Issues banner ─────────────────────────────────────
@@ -105,12 +132,14 @@ class TeamsNotifier:
             body.append({
                 "type": "Container",
                 "style": "attention",
-                "spacing": "Small",
+                "spacing": "None",
+                "bleed": True,
                 "items": [{
                     "type": "TextBlock",
                     "text": f"⚠️  {status_reason}",
                     "wrap": True,
-                    "color": "Attention"
+                    "color": "Attention",
+                    "size": "Small"
                 }]
             })
 
@@ -118,39 +147,58 @@ class TeamsNotifier:
         body.append({
             "type": "Container",
             "spacing": "Medium",
+            "separator": True,
             "items": [
                 {
                     "type": "TextBlock",
                     "text": "🏢  Team Summary",
                     "weight": "Bolder",
-                    "size": "Medium"
+                    "size": "Medium",
+                    "spacing": "None"
                 },
                 {
                     "type": "TextBlock",
                     "text": team_summary,
                     "wrap": True,
-                    "isSubtle": True
+                    "isSubtle": True,
+                    "size": "Small",
+                    "spacing": "Small"
                 }
             ]
         })
 
-        # ── Member buttons ────────────────────────────────────
+        # ── Member selector header ────────────────────────────
         body.append({
             "type": "TextBlock",
-            "text": "👥  Team Members — click a name to expand",
+            "text": "👥  TEAM MEMBERS  —  tap a name to expand",
             "weight": "Bolder",
-            "size": "Medium",
+            "size": "Small",
+            "isSubtle": True,
             "spacing": "Medium",
             "separator": True
         })
 
-        # Build buttons in rows of 3
+        # ── Person buttons ────────────────────────────────────
+        # Accordion technique: each button's Action.ToggleVisibility uses
+        # object targets {"elementId": "...", "isVisible": bool} instead of
+        # plain string IDs. This FORCES the target to a specific state rather
+        # than toggling — so clicking Alice always shows Alice AND always
+        # hides Bob, Carol, etc. True one-at-a-time accordion behavior.
         button_columns = []
         for person in participants:
-            name = person.get("name", "Unknown")
-            pid  = self._safe_id(name)
+            name         = person.get("name", "Unknown")
+            pid          = self._safe_id(name)
             has_blockers = bool(person.get("blockers"))
-            icon = "🔴" if has_blockers else "🟢"
+            dot          = "🔴" if has_blockers else "🟢"
+            first_name   = name.split()[0] if name else name
+
+            accordion_targets = (
+                [{"elementId": f"details_{pid}", "isVisible": True}]
+                + [
+                    {"elementId": f"details_{other}", "isVisible": False}
+                    for other in all_pids if other != pid
+                ]
+            )
 
             button_columns.append({
                 "type": "Column",
@@ -158,16 +206,33 @@ class TeamsNotifier:
                 "style": "emphasis",
                 "selectAction": {
                     "type": "Action.ToggleVisibility",
-                    "targetElements": [f"details_{pid}"]
+                    "targetElements": accordion_targets
                 },
-                "items": [{
-                    "type": "TextBlock",
-                    "text": f"{icon}  {name}",
-                    "weight": "Bolder",
-                    "horizontalAlignment": "Center",
-                    "wrap": False
-                }]
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": dot,
+                        "horizontalAlignment": "Center",
+                        "spacing": "Small",
+                        "size": "Small"
+                    },
+                    {
+                        "type": "TextBlock",
+                        "text": first_name,
+                        "weight": "Bolder",
+                        "horizontalAlignment": "Center",
+                        "size": "Small",
+                        "spacing": "None",
+                        "wrap": False
+                    }
+                ]
             })
+
+        # Pad last row to full 3 columns so the grid looks clean
+        remainder = len(button_columns) % 3
+        if remainder:
+            for _ in range(3 - remainder):
+                button_columns.append({"type": "Column", "width": "stretch", "items": []})
 
         for i in range(0, len(button_columns), 3):
             body.append({
@@ -176,74 +241,111 @@ class TeamsNotifier:
                 "columns": button_columns[i : i + 3]
             })
 
-        # ── Member detail containers (hidden by default) ──────
+        # ── Member detail panels ──────────────────────────────
+        # All hidden by default. The accordion buttons above reveal them one
+        # at a time. Each panel also has its own ✕ Close button.
         for person in participants:
-            name = person.get("name", "Unknown")
-            pid  = self._safe_id(name)
+            name         = person.get("name", "Unknown")
+            pid          = self._safe_id(name)
             has_blockers = bool(person.get("blockers"))
-            header_color = "Attention" if has_blockers else "Accent"
+            n_blockers   = len(person.get("blockers", []))
+            blocker_text  = (
+                f"🔴  {n_blockers} blocker{'s' if n_blockers != 1 else ''}"
+                if has_blockers else "🟢  No blockers"
+            )
+            blocker_color = "Attention" if has_blockers else "Good"
 
-            items: List[Dict] = [
+            panel_items: List[Dict] = [
+                # Panel header: name + status (left), ✕ Close (right)
                 {
-                    "type": "TextBlock",
-                    "text": f"📊  {name}",
-                    "weight": "Bolder",
-                    "size": "Medium",
-                    "color": header_color
+                    "type": "ColumnSet",
+                    "spacing": "Small",
+                    "columns": [
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "verticalContentAlignment": "Center",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": name,
+                                    "weight": "Bolder",
+                                    "size": "Medium",
+                                    "spacing": "None",
+                                    "wrap": True
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": blocker_text,
+                                    "color": blocker_color,
+                                    "size": "Small",
+                                    "spacing": "None"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Column",
+                            "width": "auto",
+                            "verticalContentAlignment": "Top",
+                            # Force-hide only this panel on click
+                            "selectAction": {
+                                "type": "Action.ToggleVisibility",
+                                "targetElements": [
+                                    {"elementId": f"details_{pid}", "isVisible": False}
+                                ]
+                            },
+                            "items": [{
+                                "type": "TextBlock",
+                                "text": "✕  Close",
+                                "color": "Accent",
+                                "size": "Small",
+                                "horizontalAlignment": "Right",
+                                "isSubtle": True
+                            }]
+                        }
+                    ]
                 }
             ]
 
             if person.get("progress_summary"):
-                items.append({
+                panel_items.append({
                     "type": "TextBlock",
                     "text": person["progress_summary"],
                     "wrap": True,
                     "isSubtle": True,
+                    "size": "Small",
                     "spacing": "Small"
                 })
 
             if person.get("yesterday"):
-                items.append(self._fact_set_section(
-                    "📅  Yesterday", person["yesterday"], "Good"
-                ))
+                panel_items.append(
+                    self._section_block("📅  Yesterday", person["yesterday"], "Default")
+                )
             if person.get("today"):
-                items.append(self._fact_set_section(
-                    "🎯  Today", person["today"], "Accent"
-                ))
+                panel_items.append(
+                    self._section_block("🎯  Today", person["today"], "Accent")
+                )
             if person.get("action_items"):
-                items.append(self._fact_set_section(
-                    "✅  Action Items", person["action_items"], "Warning"
-                ))
-
+                panel_items.append(
+                    self._section_block("✅  Action Items", person["action_items"], "Warning")
+                )
             if person.get("blockers"):
-                items.append(self._fact_set_section(
-                    "🚫  Blockers", person["blockers"], "Attention"
-                ))
-            else:
-                items.append({
-                    "type": "TextBlock",
-                    "text": "🚫  Blockers:  None",
-                    "color": "Good",
-                    "isSubtle": True,
-                    "spacing": "Small"
-                })
+                panel_items.append(
+                    self._section_block("🚫  Blockers", person["blockers"], "Attention")
+                )
 
             body.append({
                 "type": "Container",
                 "id": f"details_{pid}",
                 "isVisible": False,
                 "style": "emphasis",
-                "spacing": "Medium",
+                "spacing": "Small",
                 "separator": True,
-                "items": items
+                "items": panel_items
             })
 
         # ── Key decisions ─────────────────────────────────────
         if decisions:
-            decision_items = [
-                {"type": "TextBlock", "text": f"• {d}", "wrap": True, "spacing": "None"}
-                for d in decisions
-            ]
             body.append({
                 "type": "Container",
                 "spacing": "Medium",
@@ -253,9 +355,17 @@ class TeamsNotifier:
                         "type": "TextBlock",
                         "text": "🔑  Key Decisions",
                         "weight": "Bolder",
-                        "size": "Medium"
+                        "size": "Medium",
+                        "spacing": "None"
                     },
-                    *decision_items
+                    {
+                        "type": "FactSet",
+                        "spacing": "Small",
+                        "facts": [
+                            {"title": f"{i + 1}.", "value": d}
+                            for i, d in enumerate(decisions)
+                        ]
+                    }
                 ]
             })
 
@@ -264,6 +374,7 @@ class TeamsNotifier:
             "type": "Container",
             "style": "emphasis",
             "spacing": "Medium",
+            "bleed": True,
             "items": [{
                 "type": "TextBlock",
                 "text": (
@@ -272,14 +383,17 @@ class TeamsNotifier:
                 ),
                 "size": "Small",
                 "isSubtle": True,
-                "horizontalAlignment": "Center"
+                "horizontalAlignment": "Center",
+                "wrap": True
             }]
         })
 
-        # ── Build all-member IDs for "Expand All" ─────────────
-        all_detail_ids = [f"details_{self._safe_id(p.get('name', ''))}" for p in participants]
+        # ── Card-level action: close all open panels ──────────
+        close_all_targets = [
+            {"elementId": f"details_{pid}", "isVisible": False}
+            for pid in all_pids
+        ]
 
-        # ── Assemble card ─────────────────────────────────────
         adaptive_card = {
             "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
             "type": "AdaptiveCard",
@@ -288,8 +402,8 @@ class TeamsNotifier:
             "actions": [
                 {
                     "type": "Action.ToggleVisibility",
-                    "title": "📋  Expand / Collapse All Members",
-                    "targetElements": all_detail_ids
+                    "title": "✕  Close All",
+                    "targetElements": close_all_targets
                 }
             ],
             "msteams": {
@@ -297,7 +411,6 @@ class TeamsNotifier:
             }
         }
 
-        # Teams incoming webhook payload wraps in "attachments"
         return {
             "type": "message",
             "attachments": [
@@ -309,12 +422,20 @@ class TeamsNotifier:
             ]
         }
 
-    # ── Section builder ───────────────────────────────────────
+    # ── Section builders ──────────────────────────────────────
 
-    def _fact_set_section(self, title: str, items: List[str], color: str) -> Dict:
-        """Build a titled bullet-list container."""
+    def _section_block(self, title: str, items: List[str], color: str) -> Dict:
+        """Titled bullet-list section inside a detail panel."""
         bullets = [
-            {"type": "TextBlock", "text": f"• {item}", "wrap": True, "spacing": "None"}
+            {
+                "type": "TextBlock",
+                "text": f"›  {item}",
+                "wrap": True,
+                "spacing": "None",
+                "size": "Small",
+                "color": color if color in ("Attention", "Warning") else "Default",
+                "isSubtle": color not in ("Attention", "Warning", "Accent")
+            }
             for item in items
         ]
         return {
@@ -326,11 +447,16 @@ class TeamsNotifier:
                     "text": title,
                     "weight": "Bolder",
                     "color": color,
+                    "size": "Small",
                     "spacing": "Small"
                 },
                 *bullets
             ]
         }
+
+    def _fact_set_section(self, title: str, items: List[str], color: str) -> Dict:
+        """Backward-compatible alias for _section_block."""
+        return self._section_block(title, items, color)
 
     # ── HTTP send ─────────────────────────────────────────────
 

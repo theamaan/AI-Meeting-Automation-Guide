@@ -68,11 +68,13 @@ class MeetingIntelligenceSystem:
         self.db     = Database(self.config.db_path)
         self.parser = TranscriptParser()
         self.llm    = OllamaLLMEngine(
-            model       = self.config.ollama.model,
-            base_url    = self.config.ollama.base_url,
-            temperature = self.config.ollama.temperature,
-            max_retries = self.config.ollama.max_retries,
-            timeout     = self.config.ollama.timeout,
+            model                = self.config.ollama.model,
+            base_url             = self.config.ollama.base_url,
+            temperature          = self.config.ollama.temperature,
+            max_retries          = self.config.ollama.max_retries,
+            timeout              = self.config.ollama.timeout,
+            max_transcript_chars = getattr(self.config.ollama, "max_transcript_chars", 30000),
+            num_predict          = getattr(self.config.ollama, "num_predict", 8192),
         )
 
         # Optional notification channels

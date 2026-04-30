@@ -95,6 +95,8 @@ class OllamaLLMEngine:
         temperature: float = 0.1,
         max_retries: int = 3,
         timeout: int = 300,
+        max_transcript_chars: int = 30000,
+        num_predict: int = 8192,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -102,6 +104,8 @@ class OllamaLLMEngine:
         self.temperature = temperature
         self.max_retries = max_retries
         self.timeout = timeout
+        self.max_transcript_chars = max_transcript_chars
+        self.num_predict = num_predict
 
     # ── Public ────────────────────────────────────────────────
 
@@ -139,7 +143,7 @@ class OllamaLLMEngine:
         Returns validated dict or a safe fallback on failure.
         """
         prompt = MOM_PROMPT_TEMPLATE.format(
-            transcript=self._truncate_transcript(transcript_text),
+            transcript=self._truncate_transcript(transcript_text, self.max_transcript_chars),
             participants=", ".join(participants) if participants else "Not identified",
             meeting_date=meeting_date or "Not specified",
             meeting_title=meeting_title or "Team Meeting",
@@ -177,11 +181,12 @@ class OllamaLLMEngine:
             "prompt": prompt,
             "system": SYSTEM_PROMPT,
             "stream": False,
+            "format": "json",
             "options": {
                 "temperature": self.temperature,
                 "top_p": 0.9,
                 "top_k": 40,
-                "num_predict": 4096,
+                "num_predict": self.num_predict,
                 "repeat_penalty": 1.1,
                 # Stop sequences prevent the model from rambling after the JSON
                 "stop": ["\n```", "```\n", "\n\nNote:", "\n\nExplanation:"],
@@ -323,7 +328,7 @@ class OllamaLLMEngine:
 
     # ── Utilities ─────────────────────────────────────────────
 
-    def _truncate_transcript(self, text: str, max_chars: int = 14000) -> str:
+    def _truncate_transcript(self, text: str, max_chars: int = 30000) -> str:
         """
         Preserve the start and end of the transcript when truncating.
         Most important context is at the beginning (intros, agenda) and
