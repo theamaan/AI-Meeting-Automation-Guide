@@ -300,6 +300,19 @@ class OllamaLLMEngine:
         if not isinstance(data["participants"], list):
             data["participants"] = []
 
+        expected_names = [name.strip() for name in expected_participants if name and name.strip()]
+        expected_names_lower = {name.lower() for name in expected_names}
+
+        if expected_names_lower:
+            filtered_participants = []
+            for person in data["participants"]:
+                person_name = str(person.get("name", "")).strip()
+                if person_name.lower() in expected_names_lower:
+                    filtered_participants.append(person)
+                else:
+                    logger.debug("Dropping unexpected participant from MOM: %s", person_name or "<blank>")
+            data["participants"] = filtered_participants
+
         # Normalise each participant entry
         present_names_lower = {p.get("name", "").lower() for p in data["participants"]}
         for person in data["participants"]:
@@ -310,7 +323,7 @@ class OllamaLLMEngine:
             person.setdefault("progress_summary", "")
 
         # Add missing participants with empty data
-        for name in expected_participants:
+        for name in expected_names:
             if name.lower() not in present_names_lower:
                 logger.debug("Adding missing participant to MOM: %s", name)
                 data["participants"].append(

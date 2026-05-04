@@ -129,13 +129,21 @@ class MeetingIntelligenceSystem:
                 speakers or ["(none identified)"],
             )
 
+            participants = self.config.expected_participants or speakers
+            if self.config.expected_participants:
+                self.logger.info(
+                    "      Using configured attendee whitelist (%d): %s",
+                    len(self.config.expected_participants),
+                    self.config.expected_participants,
+                )
+
             meeting_title, meeting_date = self._extract_metadata(file_path)
 
             # ── Step 2: LLM Analysis ──────────────────────────
             self.logger.info("[2/4] Running LLM analysis (model: %s)...", self.config.ollama.model)
             mom_data = self.llm.generate_mom(
                 transcript_text = transcript.raw_text,
-                participants    = speakers,
+                participants    = participants,
                 meeting_date    = meeting_date,
                 meeting_title   = meeting_title,
             )
@@ -152,9 +160,9 @@ class MeetingIntelligenceSystem:
                 self.logger.info("[3/4] Sending Teams Adaptive Card...")
                 teams_sent = self.teams.send_mom_card(mom_data)
                 if teams_sent:
-                    self.logger.info("      Teams card delivered.")
+                    self.logger.info("      Teams webhook accepted payload (delivery may be asynchronous).")
                 else:
-                    self.logger.warning("      Teams delivery failed — check webhook URL / firewall.")
+                    self.logger.warning("      Teams webhook call failed — check URL / firewall / flow configuration.")
             else:
                 self.logger.info("[3/4] Teams skipped (not configured).")
 

@@ -40,6 +40,8 @@ class OllamaConfig:
     temperature: float = 0.1           # Low = deterministic, factual output
     max_retries: int = 3
     timeout: int = 300                 # 5 min — large models are slow
+    max_transcript_chars: int = 30000
+    num_predict: int = 8192
 
 
 @dataclass
@@ -66,6 +68,7 @@ class AppConfig:
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
     teams: TeamsConfig = field(default_factory=TeamsConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
+    expected_participants: List[str] = field(default_factory=list)
     db_path: str = "data/meetings.db"
     log_level: str = "INFO"
     log_file: str = "logs/meeting_system.log"
@@ -119,6 +122,10 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
         config.ollama.temperature      = float(o.get("temperature", config.ollama.temperature))
         config.ollama.max_retries      = int(o.get("max_retries", config.ollama.max_retries))
         config.ollama.timeout          = int(o.get("timeout", config.ollama.timeout))
+        config.ollama.max_transcript_chars = int(
+            o.get("max_transcript_chars", config.ollama.max_transcript_chars)
+        )
+        config.ollama.num_predict      = int(o.get("num_predict", config.ollama.num_predict))
 
         t = data.get("teams", {})
         config.teams.webhook_url       = t.get("webhook_url", "")
@@ -137,6 +144,7 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
         config.db_path                 = data.get("db_path", config.db_path)
         config.log_level               = data.get("log_level", config.log_level)
         config.log_file                = data.get("log_file", config.log_file)
+        config.expected_participants   = data.get("participants", config.expected_participants)
     else:
         logger.warning(f"Config file not found: {config_path} — using defaults + env vars.")
 

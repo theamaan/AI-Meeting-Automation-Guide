@@ -89,6 +89,21 @@ class TestValidationAndRepair:
         assert "Alice" in names
         assert "Bob" in names  # Was missing, should be added
 
+    def test_drops_unexpected_participants_when_expected_list_provided(self, engine):
+        data = {
+            "participants": [
+                {"name": "Alice", "yesterday": [], "today": [],
+                 "blockers": [], "action_items": [], "progress_summary": ""},
+                {"name": "Mallory", "yesterday": [], "today": [],
+                 "blockers": [], "action_items": [], "progress_summary": ""}
+            ]
+        }
+        repaired = engine._validate_and_repair(
+            data, ["Alice", "Bob"], "Test", "2026-01-01"
+        )
+        names = [p["name"] for p in repaired["participants"]]
+        assert names == ["Alice", "Bob"]
+
     def test_normalises_string_to_list(self, engine):
         """If LLM returns a string instead of a list, validate should handle it."""
         data = {

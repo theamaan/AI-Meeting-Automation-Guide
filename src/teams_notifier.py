@@ -17,6 +17,7 @@ Teams webhook docs: https://learn.microsoft.com/en-us/microsoftteams/platform/we
 import json
 import logging
 import re
+from copy import deepcopy
 from datetime import datetime
 from typing import Dict, List
 
@@ -27,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 class TeamsNotifier:
 
+    MAX_TEAMS_PAYLOAD_BYTES = 28 * 1024
+    TARGET_PAYLOAD_BYTES = 26 * 1024  # Safety margin below Teams hard limit
+
     def __init__(self, webhook_url: str, timeout: int = 30):
         self.webhook_url = webhook_url
         self.timeout = timeout
@@ -35,8 +39,123 @@ class TeamsNotifier:
 
     def send_mom_card(self, mom_data: Dict) -> bool:
         """Build Adaptive Card from MOM dict and send to Teams webhook."""
-        payload = self._build_payload(mom_data)
-        return self._post(payload)
+        compact_mom = self._compact_mom(deepcopy(mom_data))
+        payload = self._build_payload(compact_mom)
+        size_bytes = self._payload_size(payload)
+
+        if size_bytes <= self.TARGET_PAYLOAD_BYTES:
+            return self._post(payload)
+
+        participants = compact_mom.get("participants", [])
+        if not participants:
+            logger.error(
+                "Teams payload too large (%d bytes) and no participants to split.",
+                size_bytes,
+            )
+            return False
+
+        logger.warning(
+            "Teams payload too large (%d bytes). Splitting into multiple cards under %d bytes.",
+            size_bytes,
+            self.TARGET_PAYLOAD_BYTES,
+        )
+
+        chunks = self._chunk_participants_by_size(compact_mom)
+        title = compact_mom.get("meeting_title", "Daily Standup Report")
+        all_sent = True
+
+        for idx, chunk in enumerate(chunks, start=1):
+            part_mom = deepcopy(compact_mom)
+            part_mom["participants"] = chunk
+            if len(chunks) > 1:
+                part_mom["meeting_title"] = f"{title} (Part {idx}/{len(chunks)})"
+                # Keep decisions only in first card to reduce duplicate payload size.
+                if idx > 1:
+                    part_mom["key_decisions"] = []
+
+            part_payload = self._build_payload(part_mom)
+            part_size = self._payload_size(part_payload)
+            if part_size > self.MAX_TEAMS_PAYLOAD_BYTES:
+                logger.error(
+                    "Card part %d/%d is still too large (%d bytes > %d).",
+                    idx,
+                    len(chunks),
+                    part_size,
+                    self.MAX_TEAMS_PAYLOAD_BYTES,
+                )
+                all_sent = False
+                continue
+
+            logger.info(
+                "Sending Teams card part %d/%d (%d participants, %d bytes).",
+                idx,
+                len(chunks),
+                len(chunk),
+                part_size,
+            )
+            all_sent = self._post(part_payload) and all_sent
+
+        return all_sent
+
+    def _payload_size(self, payload: Dict) -> int:
+        """Return payload size in bytes as transmitted over HTTP JSON body."""
+        return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+    def _chunk_participants_by_size(self, mom: Dict) -> List[List[Dict]]:
+        """Greedily split participants so each generated card stays below target size."""
+        participants = mom.get("participants", [])
+        chunks: List[List[Dict]] = []
+        current_chunk: List[Dict] = []
+
+        for person in participants:
+            candidate = current_chunk + [person]
+            candidate_mom = deepcopy(mom)
+            candidate_mom["participants"] = candidate
+            candidate_payload = self._build_payload(candidate_mom)
+            candidate_size = self._payload_size(candidate_payload)
+
+            if candidate_size <= self.TARGET_PAYLOAD_BYTES or not current_chunk:
+                current_chunk = candidate
+            else:
+                chunks.append(current_chunk)
+                current_chunk = [person]
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    def _compact_mom(self, mom: Dict) -> Dict:
+        """Trim verbose fields to keep adaptive card payload within Teams limits."""
+
+        def _trim_text(text: str, max_len: int) -> str:
+            if not isinstance(text, str):
+                return ""
+            clean = re.sub(r"\s+", " ", text).strip()
+            return clean if len(clean) <= max_len else (clean[: max_len - 1] + "…")
+
+        def _trim_list(items: List[str], max_items: int, max_item_len: int) -> List[str]:
+            if not isinstance(items, list):
+                return []
+            return [_trim_text(str(item), max_item_len) for item in items[:max_items] if str(item).strip()]
+
+        mom["status_reason"] = _trim_text(mom.get("status_reason", ""), 220)
+        mom["team_summary"] = _trim_text(mom.get("team_summary", ""), 700)
+
+        decisions = mom.get("key_decisions", [])
+        mom["key_decisions"] = _trim_list(decisions, max_items=8, max_item_len=140)
+
+        participants = mom.get("participants", [])
+        if isinstance(participants, list):
+            for person in participants:
+                person["name"] = _trim_text(person.get("name", "Unknown"), 60)
+                person["progress_summary"] = _trim_text(person.get("progress_summary", ""), 240)
+                person["yesterday"] = _trim_list(person.get("yesterday", []), max_items=4, max_item_len=110)
+                person["today"] = _trim_list(person.get("today", []), max_items=4, max_item_len=110)
+                person["action_items"] = _trim_list(person.get("action_items", []), max_items=4, max_item_len=110)
+                person["blockers"] = _trim_list(person.get("blockers", []), max_items=3, max_item_len=110)
+
+        return mom
 
     # ── Card Builder ──────────────────────────────────────────
 
@@ -468,11 +587,36 @@ class TeamsNotifier:
                 timeout=self.timeout,
                 headers={"Content-Type": "application/json"},
             )
-            # 200 = old Connector webhook success
-            # 202 = new Power Automate Workflows webhook accepted
-            if resp.status_code in (200, 202):
-                logger.info("Teams card sent successfully (HTTP %d).", resp.status_code)
+            # 200 = old Connector webhook success (message posted immediately)
+            if resp.status_code == 200:
+                logger.info("Teams card sent successfully (HTTP 200).")
                 return True
+
+            # 202 = new Power Automate Workflows webhook accepted
+            # This means the workflow trigger accepted the request; posting can still fail later.
+            if resp.status_code == 202:
+                tracking_headers = {
+                    k: v
+                    for k, v in resp.headers.items()
+                    if k.lower() in ("x-ms-workflow-run-id", "x-ms-client-tracking-id", "x-ms-request-id")
+                }
+                logger.info(
+                    "Teams webhook accepted payload (HTTP 202). Delivery is asynchronous via Power Automate."
+                )
+                if tracking_headers:
+                    logger.info("Workflow tracking headers: %s", tracking_headers)
+                if resp.text:
+                    logger.info("Webhook response body (first 300 chars): %s", resp.text[:300])
+                return True
+
+            if resp.status_code == 413:
+                logger.error(
+                    "Teams/Flow rejected payload (HTTP 413 RequestEntityTooLarge). "
+                    "Adaptive card payload must be under 28KB."
+                )
+                logger.error("Response body: %s", resp.text[:300])
+                return False
+
             else:
                 logger.error(
                     "Teams webhook returned %d: %s",

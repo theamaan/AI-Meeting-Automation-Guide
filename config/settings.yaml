@@ -14,8 +14,8 @@ watcher:
   delay_seconds: 300
 
 ollama:
-  # Local Ollama model — must be pulled first: ollama pull qwen2.5:72b
-  model: "qwen2.5:72b"
+  # Local Ollama model — must be pulled first: ollama pull gpt-oss:120b-cloud
+  model: "gpt-oss:120b-cloud"
   base_url: "http://localhost:11434"
   # Low temperature = consistent, factual, non-creative output
   temperature: 0.1
@@ -53,3 +53,28 @@ db_path: "data/meetings.db"
 # Logging
 log_level: "INFO"   # DEBUG | INFO | WARNING | ERROR
 log_file: "logs/meeting_system.log"
+
+# Strict attendee whitelist.
+# When populated, only these participants will appear in the MOM and Teams card.
+participants:
+  - "Thangalakshmi Rajagopal"
+  - "Vaishnavi Ramachandran"
+  - "Santhosh Thangavel"
+  - "Meghana Desu"
+  - "Aman Ullah"
+  - "Deepak Naduvathata"
+  - "Naganaveen Marujolla"
+  - "Poonam Gill"
+  - "Shashank Joshi"
+  - "Adikesava Thummala"
+  - "Jayasimha Reddy"
+  - "Vanitha Guravana"
+  - "Shreyash Srivastava"
+  - "Abhirup Roy"
+  - "Vigneswari Pentakota"
+  - "Priya Chandrakant"
+  - "Sreenidhi Tumkur"
+  - "Harsh Vardhan"
+  - "Dharmika Nalla"
+  - "Nirdesh Kumar"
+  - "Senthilkumar Krishnaswamy"
