@@ -14,18 +14,18 @@ watcher:
   delay_seconds: 300
 
 ollama:
-  # Local Ollama model — must be pulled first: ollama pull gpt-oss:120b-cloud
-  model: "gpt-oss:120b-cloud"
+  # Cloud Ollama model — tuned for long-context reasoning over meeting transcripts
+  model: "kimi-k2-thinking:cloud"
   base_url: "http://localhost:11434"
   # Low temperature = consistent, factual, non-creative output
   temperature: 0.1
   max_retries: 3
-  # Seconds before giving up on a single LLM call (large models are slow)
-  timeout: 300
-  # Max chars sent to the LLM. Qwen2.5:72b supports 128K context window.
-  max_transcript_chars: 100000
-  # Max tokens the model may generate. 8192 comfortably covers 16+ participants.
-  num_predict: 8192
+  # Seconds before giving up on a single LLM call (thinking models are slower)
+  timeout: 600
+  # High cap so long meeting transcripts are not truncated unnecessarily.
+  max_transcript_chars: 140000
+  # Extra output budget for full multi-participant MOM JSON.
+  num_predict: 12288
 
 teams:
   # Set TEAMS_WEBHOOK_URL environment variable — do not put the URL here
