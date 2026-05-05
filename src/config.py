@@ -35,7 +35,7 @@ class WatcherConfig:
 
 @dataclass
 class OllamaConfig:
-    model: str = "mistral-large-3:675b-cloud"
+    model: str = "gpt-oss:120b-cloud"
     base_url: str = "http://localhost:11434"
     temperature: float = 0.1           # Low = deterministic, factual output
     max_retries: int = 3

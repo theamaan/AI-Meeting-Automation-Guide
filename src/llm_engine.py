@@ -1,6 +1,6 @@
 """
 llm_engine.py — Ollama LLM Integration
-Sends transcript to Ollama (default: mistral-large-3:675b-cloud) and returns
+Sends transcript to Ollama (default: gpt-oss:120b-cloud) and returns
 a validated, structured MOM JSON per team member.
 
 Key design:
@@ -90,7 +90,7 @@ class OllamaLLMEngine:
 
     def __init__(
         self,
-        model: str = "mistral-large-3:675b-cloud",
+        model: str = "gpt-oss:120b-cloud",
         base_url: str = "http://localhost:11434",
         temperature: float = 0.1,
         max_retries: int = 3,

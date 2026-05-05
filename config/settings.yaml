@@ -15,7 +15,7 @@ watcher:
 
 ollama:
   # Cloud Ollama model — high-accuracy structured extraction for meeting transcripts
-  model: "mistral-large-3:675b-cloud"
+  model: "gpt-oss:120b-cloud"
   base_url: "http://localhost:11434"
   # Low temperature = consistent, factual, non-creative output
   temperature: 0.1
