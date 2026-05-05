@@ -15,9 +15,6 @@ watchdog>=6.0.0
 # >=1.1.0 supports av>=14 which ships a cp313 Windows wheel.
 faster-whisper>=1.1.0
 
-# --- VTT Transcript Parsing ---
-webvtt-py==0.4.6
-
 # --- DOCX Parsing ---
 python-docx==1.1.2
 

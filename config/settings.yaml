@@ -14,17 +14,17 @@ watcher:
   delay_seconds: 300
 
 ollama:
-  # Cloud Ollama model — tuned for long-context reasoning over meeting transcripts
-  model: "kimi-k2-thinking:cloud"
+  # Cloud Ollama model — high-accuracy structured extraction for meeting transcripts
+  model: "mistral-large-3:675b-cloud"
   base_url: "http://localhost:11434"
   # Low temperature = consistent, factual, non-creative output
   temperature: 0.1
   max_retries: 3
-  # Seconds before giving up on a single LLM call (thinking models are slower)
-  timeout: 600
+  # Seconds before giving up on a single LLM call
+  timeout: 450
   # High cap so long meeting transcripts are not truncated unnecessarily.
   max_transcript_chars: 140000
-  # Extra output budget for full multi-participant MOM JSON.
+  # Output budget for full multi-participant MOM JSON.
   num_predict: 12288
 
 teams:

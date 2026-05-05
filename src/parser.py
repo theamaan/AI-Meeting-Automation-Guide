@@ -63,27 +63,56 @@ class TranscriptParser:
           00:00:01.000 --> 00:00:05.000
           <v John Smith>Good morning everyone.</v>
 
-        Also handles plain VTT without speaker tags.
+        Parses raw VTT file to preserve speaker names from <v> tags.
+        Handles both speaker-tagged format and plain text format.
         """
-        try:
-            import webvtt
-        except ImportError:
-            raise RuntimeError("webvtt-py not installed. Run: pip install webvtt-py")
-
         segments: List[TranscriptSegment] = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception as e:
+            raise RuntimeError(f"Failed to read VTT file {file_path}: {e}")
 
-        for caption in webvtt.read(file_path):
-            speaker, text = self._split_speaker_vtt(caption.text)
-            if not text.strip():
-                continue
-            segments.append(
-                TranscriptSegment(
-                    speaker=speaker,
-                    text=self._clean_text(text),
-                    start_time=self._hms_to_seconds(caption.start),
-                    end_time=self._hms_to_seconds(caption.end),
-                )
-            )
+        # Split by timestamps (hh:mm:ss.mmm --> hh:mm:ss.mmm pattern)
+        lines = content.split('\n')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            # Look for timestamp line
+            if '-->' in line:
+                start_time_str = line.split('-->')[0].strip()
+                end_time_str = line.split('-->')[1].strip()
+                
+                # Collect caption text lines until next timestamp or blank line
+                caption_lines = []
+                i += 1
+                while i < len(lines):
+                    caption_line = lines[i].strip()
+                    if not caption_line or '-->' in caption_line:
+                        break
+                    if caption_line and not caption_line.startswith('WEBVTT'):
+                        caption_lines.append(caption_line)
+                    i += 1
+                
+                if caption_lines:
+                    # Join multi-line captions
+                    full_text = ' '.join(caption_lines)
+                    speaker, text = self._split_speaker_vtt(full_text)
+                    
+                    if text.strip():
+                        segments.append(
+                            TranscriptSegment(
+                                speaker=speaker,
+                                text=self._clean_text(text),
+                                start_time=self._hms_to_seconds(start_time_str),
+                                end_time=self._hms_to_seconds(end_time_str),
+                            )
+                        )
+            else:
+                i += 1
 
         # Merge consecutive segments from the same speaker (reduces LLM context)
         segments = self._merge_consecutive(segments)
@@ -91,18 +120,34 @@ class TranscriptParser:
         return ParsedTranscript(segments=segments, raw_text=raw_text, source_file=file_path)
 
     def _split_speaker_vtt(self, raw: str) -> Tuple[str, str]:
-        """Extract speaker and text from VTT caption text."""
-        # Format 1: <v Speaker Name>text</v>
-        m = re.match(r"<v\s+([^>]+)>(.*?)(?:</v>)?$", raw.strip(), re.DOTALL)
+        """Extract speaker and text from VTT caption text.
+        
+        Handles multiple speaker formats:
+        - <v Speaker Name>text</v>        (Teams VTT with <v> tags)
+        - Speaker Name: text               (Plain format with colon)
+        - text only                        (Fallback to "Unknown")
+        """
+        raw = raw.strip()
+        
+        # Format 1: <v Speaker Name>text</v> (most common in Teams exports)
+        # Handles cases like: <v John Smith>Hello world</v>
+        # Also handles unclosed tags: <v John Smith>Hello world
+        m = re.search(r"<v\s+([^>]+)>\s*(.*?)(?:\s*</v>\s*)?$", raw, re.DOTALL)
+        if m:
+            speaker = m.group(1).strip()
+            text = m.group(2).strip()
+            # Filter out generic speaker names from webvtt/default processing
+            if speaker and speaker.lower() not in ["speaker", "unknown", "transcribed"]:
+                return speaker, text
+
+        # Format 2: "Speaker Name: text" (some transcripts use this)
+        # Requires name starts with capital letter and contains no line breaks
+        m = re.match(r"^([A-Z][A-Za-z0-9\s\.\-']{1,60}):\s+(.+)$", raw, re.MULTILINE)
         if m:
             return m.group(1).strip(), m.group(2).strip()
 
-        # Format 2: "Speaker Name: text"
-        m = re.match(r"^([A-Z][^:]{1,40}):\s+(.*)", raw.strip(), re.DOTALL)
-        if m:
-            return m.group(1).strip(), m.group(2).strip()
-
-        return "Unknown", raw.strip()
+        # Format 3: No speaker tag, return as "Unknown"
+        return "Unknown", raw
 
     # ── DOCX ──────────────────────────────────────────────────
 

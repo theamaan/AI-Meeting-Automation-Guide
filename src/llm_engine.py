@@ -1,6 +1,6 @@
 """
 llm_engine.py — Ollama LLM Integration
-Sends transcript to Ollama (default: kimi-k2-thinking:cloud) and returns
+Sends transcript to Ollama (default: mistral-large-3:675b-cloud) and returns
 a validated, structured MOM JSON per team member.
 
 Key design:
@@ -31,7 +31,6 @@ SYSTEM_PROMPT = (
     "You are an expert enterprise meeting analyst. "
     "Your ONLY job is to output valid JSON. "
     "Do NOT output any explanation, markdown, code blocks, or extra text. "
-    "Do NOT output your reasoning, thinking process, or hidden analysis. "
     "Start your response with { and end with }. "
     "Never hallucinate. Only use information explicitly stated in the transcript."
 )
@@ -91,11 +90,11 @@ class OllamaLLMEngine:
 
     def __init__(
         self,
-        model: str = "kimi-k2-thinking:cloud",
+        model: str = "mistral-large-3:675b-cloud",
         base_url: str = "http://localhost:11434",
         temperature: float = 0.1,
         max_retries: int = 3,
-        timeout: int = 600,
+        timeout: int = 450,
         max_transcript_chars: int = 140000,
         num_predict: int = 12288,
     ):
@@ -190,14 +189,7 @@ class OllamaLLMEngine:
                 "num_predict": self.num_predict,
                 "repeat_penalty": 1.1,
                 # Stop sequences prevent the model from rambling after the JSON
-                "stop": [
-                    "\n```",
-                    "```\n",
-                    "\n\nNote:",
-                    "\n\nExplanation:",
-                    "<think>",
-                    "</think>",
-                ],
+                "stop": ["\n```", "```\n", "\n\nNote:", "\n\nExplanation:"],
             },
         }
         response = requests.post(self.generate_url, json=payload, timeout=self.timeout)

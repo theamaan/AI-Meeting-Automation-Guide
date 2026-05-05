@@ -17,6 +17,7 @@ Teams webhook docs: https://learn.microsoft.com/en-us/microsoftteams/platform/we
 import json
 import logging
 import re
+import time
 from copy import deepcopy
 from datetime import datetime
 from typing import Dict, List
@@ -30,6 +31,7 @@ class TeamsNotifier:
 
     MAX_TEAMS_PAYLOAD_BYTES = 28 * 1024
     TARGET_PAYLOAD_BYTES = 26 * 1024  # Safety margin below Teams hard limit
+    PART_POST_DELAY_SECONDS = 1.5      # Helps preserve visible order in async Flow posting
 
     def __init__(self, webhook_url: str, timeout: int = 30):
         self.webhook_url = webhook_url
@@ -94,6 +96,10 @@ class TeamsNotifier:
                 part_size,
             )
             all_sent = self._post(part_payload) and all_sent
+            # Workflows posting is asynchronous (HTTP 202). A small delay between parts
+            # reduces out-of-order arrival in chat (e.g. 2/3 before 1/3).
+            if idx < len(chunks):
+                time.sleep(self.PART_POST_DELAY_SECONDS)
 
         return all_sent
 
@@ -465,6 +471,16 @@ class TeamsNotifier:
 
         # ── Key decisions ─────────────────────────────────────
         if decisions:
+            decision_bullets = [
+                {
+                    "type": "TextBlock",
+                    "text": f"•  {d}",
+                    "wrap": True,
+                    "spacing": "Small",
+                    "size": "Small",
+                }
+                for d in decisions
+            ]
             body.append({
                 "type": "Container",
                 "spacing": "Medium",
@@ -477,14 +493,7 @@ class TeamsNotifier:
                         "size": "Medium",
                         "spacing": "None"
                     },
-                    {
-                        "type": "FactSet",
-                        "spacing": "Small",
-                        "facts": [
-                            {"title": f"{i + 1}.", "value": d}
-                            for i, d in enumerate(decisions)
-                        ]
-                    }
+                    *decision_bullets,
                 ]
             })
 

@@ -35,11 +35,11 @@ class WatcherConfig:
 
 @dataclass
 class OllamaConfig:
-    model: str = "kimi-k2-thinking:cloud"
+    model: str = "mistral-large-3:675b-cloud"
     base_url: str = "http://localhost:11434"
     temperature: float = 0.1           # Low = deterministic, factual output
     max_retries: int = 3
-    timeout: int = 600                 # Thinking models are slower
+    timeout: int = 450
     max_transcript_chars: int = 140000
     num_predict: int = 12288
 
