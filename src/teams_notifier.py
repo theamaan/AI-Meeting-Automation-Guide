@@ -165,7 +165,7 @@ class TeamsNotifier:
 
     # ── Card Builder ──────────────────────────────────────────
 
-    def _build_payload(self, mom: Dict) -> Dict:  # noqa: C901
+    def _build_payload(self, mom: Dict, attendance: Dict = None) -> Dict:  # noqa: C901
         participants  = mom.get("participants", [])
         status        = mom.get("overall_status", "ALL_CLEAR")
         status_reason = mom.get("status_reason", "")
@@ -179,14 +179,36 @@ class TeamsNotifier:
         status_label  = "ALL CLEAR" if is_clear else "HAS ISSUES"
         status_color  = "Good" if is_clear else "Attention"
 
+        # ── Build per-person attendance lookup ─────────────────
+        att_lookup: Dict[str, str] = {}
+        if attendance:
+            for cat in ("spoke", "silent", "absent", "unknown"):
+                for n in attendance.get(cat, []):
+                    att_lookup[n.strip().lower()] = cat
+
         # ── Stats ─────────────────────────────────────────────
         total         = len(participants)
         blocker_count = sum(1 for p in participants if p.get("blockers"))
-        present_count = sum(1 for p in participants if p.get("yesterday") or p.get("today"))
-        absent_count  = total - present_count
         stats_parts   = []
-        if present_count: stats_parts.append(f"{present_count} present")
-        if absent_count:  stats_parts.append(f"{absent_count} absent")
+
+        if attendance and attendance.get("has_csv"):
+            spoke_n  = len(attendance.get("spoke", []))
+            silent_n = len(attendance.get("silent", []))
+            absent_n = len(attendance.get("absent", []))
+            if spoke_n:
+                stats_parts.append(f"{spoke_n} 💬 spoke")
+            if silent_n:
+                stats_parts.append(f"{silent_n} 🔇 silent")
+            if absent_n:
+                stats_parts.append(f"{absent_n} ⬜ absent")
+        else:
+            present_count = sum(1 for p in participants if p.get("yesterday") or p.get("today"))
+            absent_count  = total - present_count
+            if present_count:
+                stats_parts.append(f"{present_count} present")
+            if absent_count:
+                stats_parts.append(f"{absent_count} absent")
+
         if blocker_count:
             stats_parts.append(f"{blocker_count} 🔴 blocker{'s' if blocker_count != 1 else ''}")
         stats_text = "  •  ".join(stats_parts) if stats_parts else f"{total} participants"
@@ -662,3 +684,8 @@ class TeamsNotifier:
     def _safe_id(name: str) -> str:
         """Convert a person's name to a valid HTML element ID."""
         return re.sub(r"[^a-zA-Z0-9]", "_", name.lower()).strip("_")
+
+
+
+
+

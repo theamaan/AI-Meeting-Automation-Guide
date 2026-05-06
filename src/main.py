@@ -175,7 +175,9 @@ class MeetingIntelligenceSystem:
                 transcript_text = transcript.raw_text,
                 participants    = participants,
                 meeting_date    = meeting_date,
-                meeting_title   = meeting_title,                attendance      = attendance_result,            )
+                meeting_title   = meeting_title,
+                attendance      = attendance_result,
+            )
             self.db.update_mom(file_path, mom_data, meeting_title, meeting_date)
             self.logger.info(
                 "      MOM generated for %d participant(s)  |  Status: %s",
@@ -381,3 +383,4 @@ Examples:
 
 if __name__ == "__main__":
     main()
+
