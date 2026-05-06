@@ -144,8 +144,18 @@
     }
     .decisions-list li::before { content: "🔑"; position: absolute; left: 0; }
 
-    /* ── Divider ── */
-    .divider { border: none; border-top: 1px solid #edebe9; margin: 0 24px; }
+    /* ── Attendance badge ── */
+    .att-section { padding: 12px 24px 16px; }
+    .att-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .att-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; border-radius: 14px; font-size: 12px; font-weight: 600;
+    }
+    .chip-spoke   { background: #dff6dd; color: #107c10; }
+    .chip-silent  { background: #fff4ce; color: #7d5b00; }
+    .chip-absent  { background: #f3f2f1; color: #605e5c; }
+    .chip-unknown { background: #edebe9; color: #605e5c; }
+    .att-source   { font-size: 11px; color: #a19f9d; margin-top: 6px; }
 
     /* ── Footer ── */
     .footer {
@@ -180,6 +190,41 @@
     {% if mom.overall_status != 'ALL_CLEAR' and mom.status_reason %}
     <div class="issues-banner">⚠️ &nbsp;{{ mom.status_reason }}</div>
     {% endif %}
+
+    {% if attendance %}
+    <!-- Attendance Summary -->
+    <div class="section-title">📊 Attendance</div>
+    <div class="att-section">
+      <div class="att-row">
+        {% if attendance.spoke %}
+          {% for name in attendance.spoke %}
+          <span class="att-chip chip-spoke">💬 {{ name }}</span>
+          {% endfor %}
+        {% endif %}
+        {% if attendance.silent %}
+          {% for name in attendance.silent %}
+          <span class="att-chip chip-silent">🔇 {{ name }}</span>
+          {% endfor %}
+        {% endif %}
+        {% if attendance.absent %}
+          {% for name in attendance.absent %}
+          <span class="att-chip chip-absent">⬜ {{ name }}</span>
+          {% endfor %}
+        {% endif %}
+        {% if attendance.unknown and not attendance.has_csv %}
+          {% for name in attendance.unknown %}
+          <span class="att-chip chip-unknown">❓ {{ name }}</span>
+          {% endfor %}
+        {% endif %}
+      </div>
+      {% if attendance.has_csv %}
+      <div class="att-source">🟢 💬 Spoke &nbsp;●&nbsp; 🔇 Attended (silent) &nbsp;●&nbsp; ⬜ Absent &nbsp;— Source: Teams attendance report</div>
+      {% else %}
+      <div class="att-source">⚠️ No attendance CSV found — only confirmed speakers shown. Muted attendees may not be listed.</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
   </div>
 
   <!-- ── Team Members ── -->

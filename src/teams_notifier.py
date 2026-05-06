@@ -39,10 +39,10 @@ class TeamsNotifier:
 
     # ── Public API ────────────────────────────────────────────
 
-    def send_mom_card(self, mom_data: Dict) -> bool:
+    def send_mom_card(self, mom_data: Dict, attendance: Dict = None) -> bool:
         """Build Adaptive Card from MOM dict and send to Teams webhook."""
         compact_mom = self._compact_mom(deepcopy(mom_data))
-        payload = self._build_payload(compact_mom)
+        payload = self._build_payload(compact_mom, attendance=attendance)
         size_bytes = self._payload_size(payload)
 
         if size_bytes <= self.TARGET_PAYLOAD_BYTES:
@@ -62,7 +62,7 @@ class TeamsNotifier:
             self.TARGET_PAYLOAD_BYTES,
         )
 
-        chunks = self._chunk_participants_by_size(compact_mom)
+        chunks = self._chunk_participants_by_size(compact_mom, attendance=attendance)
         title = compact_mom.get("meeting_title", "Daily Standup Report")
         all_sent = True
 
@@ -75,7 +75,7 @@ class TeamsNotifier:
                 if idx > 1:
                     part_mom["key_decisions"] = []
 
-            part_payload = self._build_payload(part_mom)
+            part_payload = self._build_payload(part_mom, attendance=attendance)
             part_size = self._payload_size(part_payload)
             if part_size > self.MAX_TEAMS_PAYLOAD_BYTES:
                 logger.error(
@@ -107,7 +107,7 @@ class TeamsNotifier:
         """Return payload size in bytes as transmitted over HTTP JSON body."""
         return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
-    def _chunk_participants_by_size(self, mom: Dict) -> List[List[Dict]]:
+    def _chunk_participants_by_size(self, mom: Dict, attendance: Dict = None) -> List[List[Dict]]:
         """Greedily split participants so each generated card stays below target size."""
         participants = mom.get("participants", [])
         chunks: List[List[Dict]] = []
@@ -117,7 +117,7 @@ class TeamsNotifier:
             candidate = current_chunk + [person]
             candidate_mom = deepcopy(mom)
             candidate_mom["participants"] = candidate
-            candidate_payload = self._build_payload(candidate_mom)
+            candidate_payload = self._build_payload(candidate_mom, attendance=attendance)
             candidate_size = self._payload_size(candidate_payload)
 
             if candidate_size <= self.TARGET_PAYLOAD_BYTES or not current_chunk:
@@ -314,7 +314,18 @@ class TeamsNotifier:
             name         = person.get("name", "Unknown")
             pid          = self._safe_id(name)
             has_blockers = bool(person.get("blockers"))
-            dot          = "🔴" if has_blockers else "🟢"
+            att_status   = att_lookup.get(name.strip().lower(), "spoke")
+
+            # Dot color: absent=⬜, silent=🔇, blocker=🔴, clear=🟢
+            if att_status == "absent":
+                dot = "⬜"
+            elif att_status in ("silent", "unknown"):
+                dot = "🔇"
+            elif has_blockers:
+                dot = "🔴"
+            else:
+                dot = "🟢"
+
             first_name   = name.split()[0] if name else name
 
             accordion_targets = (

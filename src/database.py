@@ -71,6 +71,15 @@ class Database:
     def _init_db(self):
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+        self._migrate_db()
+
+    def _migrate_db(self):
+        """Add columns introduced after initial schema — safe to run on existing DBs."""
+        with self._conn() as conn:
+            try:
+                conn.execute("ALTER TABLE meetings ADD COLUMN attendance_json TEXT")
+            except Exception:
+                pass  # Column already exists
 
     # ── Write operations ──────────────────────────────────────
 
@@ -95,6 +104,14 @@ class Database:
             conn.execute(
                 "UPDATE meetings SET transcript = ? WHERE file_path = ?",
                 (transcript, file_path),
+            )
+
+    def update_attendance(self, file_path: str, attendance: Dict):
+        """Store classified attendance result (spoke / silent / absent / unknown)."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE meetings SET attendance_json = ? WHERE file_path = ?",
+                (json.dumps(attendance, ensure_ascii=False), file_path),
             )
 
     def update_mom(

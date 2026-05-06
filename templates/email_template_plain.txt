@@ -11,6 +11,21 @@ TEAM SUMMARY
 ------------
 {{ mom.team_summary }}
 
+{% if attendance %}
+ATTENDANCE
+----------
+{% if attendance.has_csv %}
+  Spoke    : {{ attendance.spoke | join(', ') if attendance.spoke else 'None' }}
+  Silent   : {{ attendance.silent | join(', ') if attendance.silent else 'None' }}
+  Absent   : {{ attendance.absent | join(', ') if attendance.absent else 'None' }}
+  Source   : Official Teams attendance report
+{% else %}
+  Confirmed present (spoke) : {{ attendance.spoke | join(', ') if attendance.spoke else 'None' }}
+  Status unknown            : {{ attendance.unknown | join(', ') if attendance.unknown else 'None' }}
+  Note: No attendance CSV found — muted attendees may not be listed above.
+{% endif %}
+{% endif %}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 INDIVIDUAL UPDATES

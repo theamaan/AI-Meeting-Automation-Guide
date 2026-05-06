@@ -11,6 +11,7 @@ Design decisions:
 
 import logging
 import os
+import re
 from pathlib import Path
 from threading import Timer
 from typing import Callable
@@ -23,6 +24,7 @@ from database import Database
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".mp4", ".vtt", ".docx"}
+ATTENDANCE_KEYWORDS   = {"attendance"}  # CSV filenames containing these trigger pairing
 
 
 # ──────────────────────────────────────────────────────────────
@@ -44,23 +46,70 @@ class RecordingEventHandler(FileSystemEventHandler):
     # ── Watchdog callbacks ────────────────────────────────────
 
     def on_created(self, event):
-        if not event.is_directory and self._is_supported(event.src_path):
-            self._schedule(event.src_path)
+        if event.is_directory:
+            return
+        path = event.src_path
+        if self._is_supported(path):
+            self._schedule(path)
+        elif self._is_attendance_csv(path):
+            self._schedule_paired_recording(path)
 
     def on_moved(self, event):
         # OneDrive often writes to a temp name then renames to the real file.
-        if not event.is_directory and self._is_supported(event.dest_path):
-            self._schedule(event.dest_path)
+        if event.is_directory:
+            return
+        dest = event.dest_path
+        if self._is_supported(dest):
+            self._schedule(dest)
+        elif self._is_attendance_csv(dest):
+            self._schedule_paired_recording(dest)
 
     def on_modified(self, event):
         # Re-schedule on modification so we always process the final version.
-        if not event.is_directory and self._is_supported(event.src_path):
-            self._schedule(event.src_path)
+        if event.is_directory:
+            return
+        path = event.src_path
+        if self._is_supported(path):
+            self._schedule(path)
+        elif self._is_attendance_csv(path):
+            self._schedule_paired_recording(path)
 
     # ── Internal ──────────────────────────────────────────────
 
     def _is_supported(self, path: str) -> bool:
         return Path(path).suffix.lower() in SUPPORTED_EXTENSIONS
+
+    def _is_attendance_csv(self, path: str) -> bool:
+        """Return True if this looks like a Teams attendance CSV."""
+        p = Path(path)
+        if p.suffix.lower() != ".csv":
+            return False
+        name_lower = p.name.lower()
+        return any(kw in name_lower for kw in ATTENDANCE_KEYWORDS)
+
+    def _schedule_paired_recording(self, csv_path: str):
+        """
+        When an attendance CSV arrives, find any matching recording in the same
+        folder and (re-)schedule it so the CSV is included when processing fires.
+        Recording is matched by shared significant words in the filename stem.
+        """
+        csv_stem = Path(csv_path).stem.lower()
+        # Strip known suffixes like " - attendance report 5-05-26"
+        csv_stem = re.sub(r"[-\s]+attendance.*$", "", csv_stem).strip()
+        base_words = {w for w in re.split(r"[\s\-_()\.]+", csv_stem) if len(w) > 3}
+
+        directory = Path(csv_path).parent
+        for ext in SUPPORTED_EXTENSIONS:
+            for candidate in directory.glob(f"*{ext}"):
+                cand_lower = candidate.stem.lower()
+                if base_words and any(w in cand_lower for w in base_words):
+                    logger.info(
+                        "Attendance CSV arrived (%s) — refreshing schedule for: %s",
+                        Path(csv_path).name, candidate.name,
+                    )
+                    self._schedule(str(candidate))
+                    return
+        logger.debug("Attendance CSV detected but no matching recording found: %s", Path(csv_path).name)
 
     def _schedule(self, file_path: str):
         # Cancel any existing pending timer for this file

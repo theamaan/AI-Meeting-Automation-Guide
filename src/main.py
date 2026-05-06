@@ -29,6 +29,7 @@ from llm_engine import OllamaLLMEngine
 from parser import TranscriptParser
 from teams_notifier import TeamsNotifier
 from watcher import FileWatcher
+from attendance_parser import find_attendance_csv, parse_attendance_csv, classify_attendance
 
 
 # ──────────────────────────────────────────────────────────────
@@ -139,14 +140,42 @@ class MeetingIntelligenceSystem:
 
             meeting_title, meeting_date = self._extract_metadata(file_path)
 
-            # ── Step 2: LLM Analysis ──────────────────────────
+            # ── Step 1b: Attendance tracking ──────────────────
+            attendance_result = None
+            att_csv = find_attendance_csv(file_path)
+            if att_csv:
+                att_report = parse_attendance_csv(att_csv)
+                if att_report:
+                    attendance_result = classify_attendance(
+                        whitelist=participants,
+                        csv_attendees=att_report.attendees,
+                        transcript_speakers=speakers,
+                    )
+                    self.db.update_attendance(file_path, attendance_result)
+                    self.logger.info(
+                        "      Attendance (CSV ✔): %d spoke  |  %d silent  |  %d absent",
+                        len(attendance_result["spoke"]),
+                        len(attendance_result["silent"]),
+                        len(attendance_result["absent"]),
+                    )
+                else:
+                    self.logger.warning("      Attendance CSV found but could not be parsed.")
+            else:
+                self.logger.info("      No attendance CSV found — transcript-only (no absent labels).")
+
+            if attendance_result is None:
+                # Fallback: transcript speakers only — never labels anyone absent
+                attendance_result = classify_attendance(
+                    whitelist=participants,
+                    csv_attendees=None,
+                    transcript_speakers=speakers,
+                )
             self.logger.info("[2/4] Running LLM analysis (model: %s)...", self.config.ollama.model)
             mom_data = self.llm.generate_mom(
                 transcript_text = transcript.raw_text,
                 participants    = participants,
                 meeting_date    = meeting_date,
-                meeting_title   = meeting_title,
-            )
+                meeting_title   = meeting_title,                attendance      = attendance_result,            )
             self.db.update_mom(file_path, mom_data, meeting_title, meeting_date)
             self.logger.info(
                 "      MOM generated for %d participant(s)  |  Status: %s",
@@ -158,7 +187,7 @@ class MeetingIntelligenceSystem:
             teams_sent = False
             if self.teams:
                 self.logger.info("[3/4] Sending Teams Adaptive Card...")
-                teams_sent = self.teams.send_mom_card(mom_data)
+                teams_sent = self.teams.send_mom_card(mom_data, attendance=attendance_result)
                 if teams_sent:
                     self.logger.info("      Teams webhook accepted payload (delivery may be asynchronous).")
                 else:
@@ -173,6 +202,7 @@ class MeetingIntelligenceSystem:
                 email_sent = self.emailer.send_mom_email(
                     mom_data   = mom_data,
                     recipients = self.config.email.recipients,
+                    attendance = attendance_result,
                 )
                 if email_sent:
                     self.logger.info("      Email delivered.")

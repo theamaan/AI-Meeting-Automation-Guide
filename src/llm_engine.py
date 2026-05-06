@@ -41,6 +41,9 @@ MEETING TITLE: {meeting_title}
 MEETING DATE: {meeting_date}
 KNOWN PARTICIPANTS: {participants}
 
+ATTENDANCE STATUS:
+{attendance_context}
+
 ─── TRANSCRIPT ───
 {transcript}
 ─────────────────
@@ -57,6 +60,10 @@ STRICT EXTRACTION RULES:
 4. Keep each list item under 20 words.
 5. overall_status = "ALL_CLEAR" if no blockers exist across all participants, else "HAS_ISSUES"
 6. key_decisions = specific decisions made in the meeting (not action items)
+7. ATTENDANCE RULES (apply only when attendance data is provided above):
+   - ABSENT participants : set progress_summary = "Absent from this meeting." and all arrays to []
+   - SILENT participants : set progress_summary = "Attended but did not speak." and all arrays to []
+   - Do NOT assume anyone is absent unless they are explicitly listed as ABSENT above
 
 OUTPUT — return ONLY this JSON, nothing else:
 {{
@@ -137,16 +144,19 @@ class OllamaLLMEngine:
         participants: List[str],
         meeting_date: str = "",
         meeting_title: str = "",
+        attendance: Optional[Dict] = None,
     ) -> Dict:
         """
         Call LLM to extract structured MOM from transcript.
         Returns validated dict or a safe fallback on failure.
         """
+        attendance_context = self._format_attendance_context(attendance)
         prompt = MOM_PROMPT_TEMPLATE.format(
             transcript=self._truncate_transcript(transcript_text, self.max_transcript_chars),
             participants=", ".join(participants) if participants else "Not identified",
             meeting_date=meeting_date or "Not specified",
             meeting_title=meeting_title or "Team Meeting",
+            attendance_context=attendance_context,
         )
 
         for attempt in range(1, self.max_retries + 1):
@@ -340,6 +350,27 @@ class OllamaLLMEngine:
         return data
 
     # ── Utilities ─────────────────────────────────────────────
+
+    def _format_attendance_context(self, attendance: Optional[Dict]) -> str:
+        """Format attendance dict as a readable block for the LLM prompt."""
+        if not attendance:
+            return "No attendance report available — use transcript speakers as a guide only. Do NOT label anyone as absent."
+        lines = []
+        if attendance.get("has_csv"):
+            if attendance.get("spoke"):
+                lines.append(f"  PRESENT (spoke):   {', '.join(attendance['spoke'])}")
+            if attendance.get("silent"):
+                lines.append(f"  PRESENT (silent):  {', '.join(attendance['silent'])}")
+            if attendance.get("absent"):
+                lines.append(f"  ABSENT:            {', '.join(attendance['absent'])}")
+            lines.append("  (Source: official Teams attendance report — authoritative)")
+        else:
+            if attendance.get("spoke"):
+                lines.append(f"  Confirmed present (spoke in transcript): {', '.join(attendance['spoke'])}")
+            if attendance.get("unknown"):
+                lines.append(f"  Status unknown (no attendance CSV):      {', '.join(attendance['unknown'])}")
+            lines.append("  WARNING: No attendance CSV available — do NOT assume unknowns are absent.")
+        return "\n".join(lines) if lines else "No attendance data."
 
     def _truncate_transcript(self, text: str, max_chars: int = 30000) -> str:
         """

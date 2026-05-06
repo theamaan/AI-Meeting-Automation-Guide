@@ -55,6 +55,7 @@ class EmailService:
         self,
         mom_data: Dict,
         recipients: List[str],
+        attendance: Dict = None,
     ) -> bool:
         """
         Build and send an HTML + plain-text multipart email.
@@ -65,8 +66,8 @@ class EmailService:
             return False
 
         try:
-            html_body  = self._render("email_template.html",       mom_data)
-            plain_body = self._render("email_template_plain.txt",  mom_data)
+            html_body  = self._render("email_template.html",       mom_data, attendance)
+            plain_body = self._render("email_template_plain.txt",  mom_data, attendance)
             subject    = self._build_subject(mom_data)
 
             msg = MIMEMultipart("alternative")
@@ -104,10 +105,11 @@ class EmailService:
 
     # ── Internal ──────────────────────────────────────────────
 
-    def _render(self, template_name: str, mom_data: Dict) -> str:
+    def _render(self, template_name: str, mom_data: Dict, attendance: Dict = None) -> str:
         template = self.jinja_env.get_template(template_name)
         return template.render(
             mom=mom_data,
+            attendance=attendance or {},
             generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
 
