@@ -29,7 +29,7 @@ class WatcherConfig:
     watch_path: str = ""
     delay_seconds: int = 300           # Wait before processing (file must be fully synced)
     supported_extensions: List[str] = field(
-        default_factory=lambda: [".mp4", ".vtt", ".docx"]
+        default_factory=lambda: [".vtt", ".csv"]
     )
 
 
@@ -156,3 +156,4 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
     config.ollama.base_url    = os.getenv("OLLAMA_BASE_URL",     config.ollama.base_url)
 
     return config
+

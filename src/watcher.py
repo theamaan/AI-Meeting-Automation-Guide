@@ -23,7 +23,7 @@ from database import Database
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_EXTENSIONS = {".mp4", ".vtt", ".docx"}
+SUPPORTED_EXTENSIONS = {".vtt"}
 ATTENDANCE_KEYWORDS   = {"attendance"}  # CSV filenames containing these trigger pairing
 
 
@@ -185,3 +185,4 @@ class FileWatcher:
         self._observer.stop()
         self._observer.join()
         logger.info("Watcher stopped.")
+

@@ -1,9 +1,9 @@
 """
 parser.py — Transcript Extraction Engine
-Handles three input types:
+Handles one transcript input type:
   .vtt   → parse WebVTT (Microsoft Teams native export)
-  .docx  → extract paragraphs from Word document
-  .mp4   → transcribe audio with faster-whisper (CPU, int8)
+
+Attendance is read separately from the Teams attendance CSV.
 
 Output: ParsedTranscript with per-segment speaker + text + timestamps.
 """
@@ -48,12 +48,9 @@ class TranscriptParser:
         suffix = Path(file_path).suffix.lower()
         if suffix == ".vtt":
             return self._parse_vtt(file_path)
-        elif suffix == ".docx":
-            return self._parse_docx(file_path)
-        elif suffix == ".mp4":
-            return self._transcribe_mp4(file_path)
-        else:
-            raise ValueError(f"Unsupported file type: {suffix}")
+        raise ValueError(
+            f"Unsupported file type: {suffix}. Only .vtt transcripts are supported in this setup."
+        )
 
     # ── VTT ───────────────────────────────────────────────────
 
@@ -333,3 +330,5 @@ class TranscriptParser:
         for seg in transcript.segments:
             grouped.setdefault(seg.speaker, []).append(seg.text)
         return grouped
+
+

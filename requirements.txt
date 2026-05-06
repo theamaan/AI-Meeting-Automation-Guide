@@ -8,16 +8,6 @@
 # 6.0.0+ fixes this.
 watchdog>=6.0.0
 
-# --- Audio Transcription (used when only .mp4 is available) ---
-# NOTE: Do NOT pin to 1.0.3 on Python 3.13/Windows.
-# faster-whisper 1.0.3 requires av<13, which has no pre-built cp313 wheel
-# and fails to compile without Microsoft C++ Build Tools.
-# >=1.1.0 supports av>=14 which ships a cp313 Windows wheel.
-faster-whisper>=1.1.0
-
-# --- DOCX Parsing ---
-python-docx==1.1.2
-
 # --- LLM / Ollama Client ---
 requests==2.32.3
 
@@ -37,3 +27,5 @@ python-dotenv==1.0.1
 # --- Testing ---
 pytest==8.2.2
 pytest-mock==3.14.0
+
+
