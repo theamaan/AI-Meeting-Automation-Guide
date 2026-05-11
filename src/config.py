@@ -41,7 +41,7 @@ class OllamaConfig:
     max_retries: int = 3
     timeout: int = 450
     max_transcript_chars: int = 140000
-    num_predict: int = 12288
+    num_predict: int = -1  # -1 = unlimited (generate until stop token or context window)
 
 
 @dataclass

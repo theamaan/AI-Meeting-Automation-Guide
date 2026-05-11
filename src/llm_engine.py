@@ -103,7 +103,7 @@ class OllamaLLMEngine:
         max_retries: int = 3,
         timeout: int = 450,
         max_transcript_chars: int = 140000,
-        num_predict: int = 12288,
+        num_predict: int = -1,  # -1 = unlimited (Ollama default: generate until stop token or context window)
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -170,6 +170,10 @@ class OllamaLLMEngine:
                 return validated
             except json.JSONDecodeError as exc:
                 logger.warning("JSON parse failed attempt %d: %s", attempt, exc)
+                logger.warning(
+                    "Raw LLM output that failed parsing (first 800 chars): %s",
+                    repr(raw[:800]) if raw else "<empty — model returned nothing>",
+                )
             except requests.exceptions.Timeout:
                 logger.warning("LLM timeout on attempt %d (timeout=%ds)", attempt, self.timeout)
             except Exception as exc:
@@ -204,7 +208,33 @@ class OllamaLLMEngine:
         }
         response = requests.post(self.generate_url, json=payload, timeout=self.timeout)
         response.raise_for_status()
-        return response.json().get("response", "").strip()
+        body = response.json()
+
+        # done_reason tells us WHY the model stopped:
+        #   "stop"   — model finished cleanly (ideal)
+        #   "length" — hit num_predict token cap → output is truncated
+        #   "load"   — model was still loading (shouldn’t happen with stream=False)
+        done_reason = body.get("done_reason", "unknown")
+        raw = body.get("response", "").strip()
+
+        if done_reason == "length":
+            logger.warning(
+                "LLM hit num_predict token cap (%d). Output was truncated. "
+                "Increase num_predict or reduce transcript length. "
+                "Truncated output will fail JSON parsing.",
+                self.num_predict,
+            )
+        elif done_reason not in ("stop", "unknown"):
+            logger.warning("Unexpected LLM done_reason: '%s'", done_reason)
+
+        if not raw:
+            logger.warning(
+                "LLM returned empty response (done_reason=%s). "
+                "This usually means the model hit its token cap or had a server-side error.",
+                done_reason,
+            )
+
+        return raw
 
     # ── JSON extraction ───────────────────────────────────────
 

@@ -24,8 +24,9 @@ ollama:
   timeout: 450
   # High cap so long meeting transcripts are not truncated unnecessarily.
   max_transcript_chars: 140000
-  # Output budget for full multi-participant MOM JSON.
-  num_predict: 12288
+  # -1 = unlimited: model generates until a stop token or the context window.
+  # This is the safest maximum — the model won't be cut off mid-JSON.
+  num_predict: -1
 
 teams:
   # Set TEAMS_WEBHOOK_URL environment variable — do not put the URL here
