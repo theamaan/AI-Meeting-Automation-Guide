@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class TeamsNotifier:
 
     MAX_TEAMS_PAYLOAD_BYTES = 28 * 1024
-    TARGET_PAYLOAD_BYTES = 26 * 1024  # Safety margin below Teams hard limit
+    TARGET_PAYLOAD_BYTES = 20 * 1024  # Conservative — Power Automate wraps payload and adds overhead before forwarding to Teams
     PART_POST_DELAY_SECONDS = 1.5      # Helps preserve visible order in async Flow posting
 
     def __init__(self, webhook_url: str, timeout: int = 30):
@@ -64,44 +64,69 @@ class TeamsNotifier:
 
         chunks = self._chunk_participants_by_size(compact_mom, attendance=attendance)
         title = compact_mom.get("meeting_title", "Daily Standup Report")
-        all_sent = True
+        n_parts = len(chunks)
 
+        # ── Phase 1: Build & validate ALL parts before sending any ────────────────
+        # If any part cannot be made to fit — even after emergency stripping — abort
+        # everything. This prevents the worst-case scenario where Part 1 is rejected
+        # by Power Automate (after it already returned HTTP 202) while Parts 2..N
+        # were already accepted and posted in chat out of context.
+        validated_parts: List[tuple] = []
         for idx, chunk in enumerate(chunks, start=1):
             part_mom = deepcopy(compact_mom)
             part_mom["participants"] = chunk
-            if len(chunks) > 1:
-                part_mom["meeting_title"] = f"{title} (Part {idx}/{len(chunks)})"
-                # Keep decisions only in first card to reduce duplicate payload size.
+            if n_parts > 1:
+                part_mom["meeting_title"] = f"{title} (Part {idx}/{n_parts})"
                 if idx > 1:
                     part_mom["key_decisions"] = []
 
             part_payload = self._build_payload(part_mom, attendance=attendance)
             part_size = self._payload_size(part_payload)
+
+            if part_size > self.TARGET_PAYLOAD_BYTES:
+                logger.warning(
+                    "Card part %d/%d is %d bytes after normal compaction — applying emergency strip.",
+                    idx, n_parts, part_size,
+                )
+                part_mom = self._emergency_strip(part_mom)
+                part_payload = self._build_payload(part_mom, attendance=attendance)
+                part_size = self._payload_size(part_payload)
+
             if part_size > self.MAX_TEAMS_PAYLOAD_BYTES:
                 logger.error(
-                    "Card part %d/%d is still too large (%d bytes > %d).",
-                    idx,
-                    len(chunks),
-                    part_size,
-                    self.MAX_TEAMS_PAYLOAD_BYTES,
+                    "Card part %d/%d is still %d bytes after emergency strip (hard limit %d). "
+                    "Aborting ALL %d parts — nothing will be sent to prevent partial delivery.",
+                    idx, n_parts, part_size, self.MAX_TEAMS_PAYLOAD_BYTES, n_parts,
                 )
-                all_sent = False
-                continue
+                return False
 
+            validated_parts.append((idx, n_parts, len(chunk), part_payload, part_size))
+            logger.info(
+                "Pre-validated Teams card part %d/%d (%d participants, %d bytes) — OK.",
+                idx, n_parts, len(chunk), part_size,
+            )
+
+        # ── Phase 2: All parts validated — send in strict order, stop on first failure ──
+        # Power Automate webhooks return HTTP 202 (accepted) immediately and post
+        # asynchronously. If a POST itself fails (4xx/5xx/timeout), stop immediately
+        # so we never deliver later parts without the earlier ones.
+        for idx, n_parts, n_people, part_payload, part_size in validated_parts:
             logger.info(
                 "Sending Teams card part %d/%d (%d participants, %d bytes).",
-                idx,
-                len(chunks),
-                len(chunk),
-                part_size,
+                idx, n_parts, n_people, part_size,
             )
-            all_sent = self._post(part_payload) and all_sent
-            # Workflows posting is asynchronous (HTTP 202). A small delay between parts
-            # reduces out-of-order arrival in chat (e.g. 2/3 before 1/3).
-            if idx < len(chunks):
+            if not self._post(part_payload):
+                remaining = n_parts - idx
+                if remaining > 0:
+                    logger.error(
+                        "Part %d/%d failed — aborting remaining %d part(s) to prevent partial delivery.",
+                        idx, n_parts, remaining,
+                    )
+                return False
+            if idx < n_parts:
                 time.sleep(self.PART_POST_DELAY_SECONDS)
 
-        return all_sent
+        return True
 
     def _payload_size(self, payload: Dict) -> int:
         """Return payload size in bytes as transmitted over HTTP JSON body."""
@@ -350,13 +375,11 @@ class TeamsNotifier:
 
             first_name   = name.split()[0] if name else name
 
-            accordion_targets = (
-                [{"elementId": f"details_{pid}", "isVisible": True}]
-                + [
-                    {"elementId": f"details_{other}", "isVisible": False}
-                    for other in all_pids if other != pid
-                ]
-            )
+            # Simple per-person toggle — one target entry per button (O(1) per button,
+            # O(n) total). The old accordion approach used {show self + hide all others},
+            # which is O(n) targets PER button = O(n²) total entries. With 15 participants
+            # that was ~225 accordion entries (~11 KB) before any content was counted.
+            accordion_targets = [f"details_{pid}"]
 
             button_columns.append({
                 "type": "Column",
@@ -618,6 +641,20 @@ class TeamsNotifier:
     def _fact_set_section(self, title: str, items: List[str], color: str) -> Dict:
         """Backward-compatible alias for _section_block."""
         return self._section_block(title, items, color)
+
+    def _emergency_strip(self, mom: Dict) -> Dict:
+        """Last-resort content reduction when a chunk still exceeds TARGET_PAYLOAD_BYTES
+        after normal compaction. Strips all list content, keeping only name, a short
+        progress summary, and at most one blocker per person.
+        Mutates and returns the passed-in dict."""
+        for person in mom.get("participants", []):
+            person["yesterday"] = []
+            person["today"] = []
+            person["action_items"] = []
+            person["blockers"] = person["blockers"][:1] if person.get("blockers") else []
+            ps = person.get("progress_summary", "")
+            person["progress_summary"] = ps[:80] if len(ps) > 80 else ps
+        return mom
 
     # ── HTTP send ─────────────────────────────────────────────
 

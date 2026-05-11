@@ -27,8 +27,8 @@
       color: #ffffff;
       padding: 28px 32px;
     }
-    .header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-    .header .meta { font-size: 13px; opacity: .85; }
+    .header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: #ffffff !important; }
+    .header .meta { font-size: 13px; opacity: .85; color: #ffffff !important; }
     .status-badge {
       display: inline-block;
       margin-top: 12px;
@@ -171,17 +171,21 @@
 
   <!-- ── Header ── -->
   <div class="card">
-    <div class="header">
-      <h1>📋 Minutes of Meeting</h1>
-      <div class="meta">
-        {{ mom.meeting_title }} &nbsp;•&nbsp; {{ mom.meeting_date }}
-      </div>
-      {% if mom.overall_status == 'ALL_CLEAR' %}
-        <span class="status-badge badge-clear">✅ ALL CLEAR</span>
-      {% else %}
-        <span class="status-badge badge-issues">⚠️ HAS ISSUES</span>
-      {% endif %}
-    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0078d4" style="background: linear-gradient(135deg, #0078d4 0%, #00437a 100%); background-color: #0078d4; border-radius: 8px 8px 0 0;">
+      <tr>
+        <td style="padding: 28px 32px;">
+          <h1 style="color: #ffffff !important; font-size: 22px; font-weight: 700; margin: 0 0 4px 0; font-family: 'Segoe UI', Arial, sans-serif;">📋 Minutes of Meeting</h1>
+          <p style="color: #ffffff !important; font-size: 13px; margin: 0 0 12px 0; opacity: .9; font-family: 'Segoe UI', Arial, sans-serif;">
+            {{ mom.meeting_title }} &nbsp;•&nbsp; {{ mom.meeting_date }}
+          </p>
+          {% if mom.overall_status == 'ALL_CLEAR' %}
+            <span class="status-badge badge-clear" style="background: #107c10; color: #ffffff; display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700;">✅ ALL CLEAR</span>
+          {% else %}
+            <span class="status-badge badge-issues" style="background: #d83b01; color: #ffffff; display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700;">⚠️ HAS ISSUES</span>
+          {% endif %}
+        </td>
+      </tr>
+    </table>
 
     <!-- Team Summary -->
     <div class="section-title">🏢 Team Summary</div>
