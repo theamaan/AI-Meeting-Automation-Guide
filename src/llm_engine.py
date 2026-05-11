@@ -103,7 +103,7 @@ class OllamaLLMEngine:
         max_retries: int = 3,
         timeout: int = 450,
         max_transcript_chars: int = 140000,
-        num_predict: int = 16384,  # Cloud proxy translates to max_tokens — must be positive (-1 is rejected by cloud models)
+        num_predict: int = 20000,  # Cloud proxy maps to max_tokens — must be positive (-1 is rejected by cloud models)
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")

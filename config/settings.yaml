@@ -24,9 +24,9 @@ ollama:
   timeout: 450
   # High cap so long meeting transcripts are not truncated unnecessarily.
   max_transcript_chars: 140000
-  # -1 = unlimited: model generates until a stop token or the context window.
-  # This is the safest maximum — the model won't be cut off mid-JSON.
-  num_predict: -1
+  # Max output tokens. The cloud proxy maps this to max_tokens — must be a positive integer.
+  # 20000 gives ample room for 21+ participants without truncating mid-JSON.
+  num_predict: 20000
 
 teams:
   # Set TEAMS_WEBHOOK_URL environment variable — do not put the URL here
