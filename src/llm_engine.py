@@ -207,7 +207,22 @@ class OllamaLLMEngine:
             },
         }
         response = requests.post(self.generate_url, json=payload, timeout=self.timeout)
-        response.raise_for_status()
+
+        if not response.ok:
+            # Log the actual Ollama error body before raising so we can diagnose it.
+            # Without this, HTTPError only shows the status code — not the reason.
+            try:
+                err_body = response.json()
+                err_detail = err_body.get("error", response.text[:500])
+            except Exception:
+                err_detail = response.text[:500]
+            logger.error(
+                "Ollama returned HTTP %d. Error detail: %s",
+                response.status_code,
+                err_detail,
+            )
+            response.raise_for_status()
+
         body = response.json()
 
         # done_reason tells us WHY the model stopped:
