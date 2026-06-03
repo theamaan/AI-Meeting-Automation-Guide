@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import logging
 import re
 import signal
@@ -115,7 +116,12 @@ class MeetingIntelligenceSystem:
         self.logger.info("=" * 60)
 
         file_type = Path(file_path).suffix.lower()
-        self.db.record_meeting(file_path, file_type)
+        try:
+            with open(file_path, "rb") as fh:
+                file_hash = hashlib.md5(fh.read()).hexdigest()
+        except OSError:
+            file_hash = None
+        self.db.record_meeting(file_path, file_type, file_hash)
 
         try:
             # ── Step 1: Parse / Transcribe ────────────────────

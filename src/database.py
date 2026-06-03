@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     file_path       TEXT    UNIQUE NOT NULL,
     file_name       TEXT    NOT NULL,
     file_type       TEXT    NOT NULL,
+    file_hash       TEXT,
     processed_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     transcript      TEXT,
     mom_json        TEXT,
@@ -76,25 +77,41 @@ class Database:
     def _migrate_db(self):
         """Add columns introduced after initial schema — safe to run on existing DBs."""
         with self._conn() as conn:
-            try:
-                conn.execute("ALTER TABLE meetings ADD COLUMN attendance_json TEXT")
-            except Exception:
-                pass  # Column already exists
+            for col_def in [
+                "ALTER TABLE meetings ADD COLUMN attendance_json TEXT",
+                "ALTER TABLE meetings ADD COLUMN file_hash TEXT",
+            ]:
+                try:
+                    conn.execute(col_def)
+                except Exception:
+                    pass  # Column already exists
 
     # ── Write operations ──────────────────────────────────────
 
-    def record_meeting(self, file_path: str, file_type: str) -> int:
+    def record_meeting(self, file_path: str, file_type: str, file_hash: str = None) -> int:
         """
-        Register a new file for processing.
-        INSERT OR IGNORE — safe to call multiple times; won't duplicate.
+        Register a file for processing.
+        If the same path already exists with a DIFFERENT hash (new meeting, same filename),
+        the old record is deleted so the fresh meeting gets a clean slate.
+        If same path + same hash already exists, INSERT OR IGNORE leaves it untouched.
         """
         with self._conn() as conn:
+            # Check whether an existing record has a different content hash
+            existing = conn.execute(
+                "SELECT file_hash, status FROM meetings WHERE file_path = ?",
+                (file_path,),
+            ).fetchone()
+
+            if existing and file_hash is not None and existing["file_hash"] != file_hash:
+                # Different content at same path — new meeting file. Remove the old record.
+                conn.execute("DELETE FROM meetings WHERE file_path = ?", (file_path,))
+
             cursor = conn.execute(
                 """
-                INSERT OR IGNORE INTO meetings (file_path, file_name, file_type, status)
-                VALUES (?, ?, ?, 'processing')
+                INSERT OR IGNORE INTO meetings (file_path, file_name, file_type, file_hash, status)
+                VALUES (?, ?, ?, ?, 'processing')
                 """,
-                (file_path, Path(file_path).name, file_type),
+                (file_path, Path(file_path).name, file_type, file_hash),
             )
             return cursor.lastrowid
 
@@ -153,13 +170,22 @@ class Database:
 
     # ── Read operations ───────────────────────────────────────
 
-    def is_processed(self, file_path: str) -> bool:
-        """Return True only if this exact file was successfully completed before."""
+    def is_processed(self, file_path: str, file_hash: str = None) -> bool:
+        """Return True only if this exact file content was successfully completed before.
+        When file_hash is supplied, the record must match BOTH path and hash.
+        A new meeting saved at the same filename (different content) correctly returns False.
+        """
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT 1 FROM meetings WHERE file_path = ? AND status = 'completed'",
-                (file_path,),
-            ).fetchone()
+            if file_hash is not None:
+                row = conn.execute(
+                    "SELECT 1 FROM meetings WHERE file_path = ? AND file_hash = ? AND status = 'completed'",
+                    (file_path, file_hash),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT 1 FROM meetings WHERE file_path = ? AND status = 'completed'",
+                    (file_path,),
+                ).fetchone()
             return row is not None
 
     def get_mom(self, file_path: str) -> Optional[Dict]:

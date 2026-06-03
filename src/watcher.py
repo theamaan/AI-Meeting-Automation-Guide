@@ -9,6 +9,7 @@ Design decisions:
   - Timer resets if file changes again during the delay window.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -117,9 +118,17 @@ class RecordingEventHandler(FileSystemEventHandler):
             self._pending[file_path].cancel()
             logger.debug(f"Timer reset for: {Path(file_path).name}")
 
-        # Skip already-processed files
-        if self.db.is_processed(file_path):
-            logger.info(f"Already processed, skipping: {Path(file_path).name}")
+        # Compute content hash — same filename but different bytes = new meeting
+        file_hash = None
+        try:
+            with open(file_path, "rb") as fh:
+                file_hash = hashlib.md5(fh.read()).hexdigest()
+        except OSError:
+            pass  # File may still be mid-sync; proceed without hash
+
+        # Skip already-processed files (path + hash must both match)
+        if self.db.is_processed(file_path, file_hash):
+            logger.info(f"Already processed (same content), skipping: {Path(file_path).name}")
             return
 
         logger.info(
