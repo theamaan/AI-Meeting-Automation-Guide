@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import logging
 import re
+import secrets
 import signal
 import sys
 import time
@@ -23,8 +24,10 @@ from pathlib import Path
 # Add src/ to path when running directly
 sys.path.insert(0, str(Path(__file__).parent))
 
+from approval_server import ApprovalCallbackServer
 from config import load_config
 from database import Database
+from digest import WeeklyDigestService
 from emailer import EmailService
 from llm_engine import OllamaLLMEngine
 from parser import TranscriptParser
@@ -99,6 +102,21 @@ class MeetingIntelligenceSystem:
             )
         else:
             self.logger.info("Email notifications disabled (no SMTP username configured).")
+
+        # Feature 9: Approval gate server (localhost only, daemon thread)
+        self.approval_server = None
+        if self.config.approval.enabled:
+            self.approval_server = ApprovalCallbackServer(
+                db=self.db,
+                port=self.config.approval.callback_port,
+            )
+            self.approval_server.start()
+            self.logger.info(
+                "Approval server listening on http://127.0.0.1:%d",
+                self.config.approval.callback_port,
+            )
+        else:
+            self.logger.info("Approval gate disabled.")
 
         self.watcher  = None
         self._running = False
@@ -191,22 +209,58 @@ class MeetingIntelligenceSystem:
                 mom_data.get("overall_status", "?"),
             )
 
-            # ── Step 3: Teams notification ────────────────────
+            # ── Step 2b: Sentiment analysis (confidential, manager-only) ─
+            sentiment_data = None
+            if self.config.sentiment.enabled:
+                self.logger.info("[2b] Running sentiment analysis...")
+                sentiment_data = self.llm.analyze_sentiment(
+                    transcript_text=transcript.raw_text,
+                    participants=participants,
+                    meeting_title=meeting_title,
+                    meeting_date=meeting_date,
+                )
+                self.db.update_sentiment(file_path, sentiment_data)
+                self.logger.info(
+                    "      Sentiment complete  |  Flags: %d",
+                    sentiment_data.get("flags_count", 0),
+                )
+            else:
+                self.logger.info("[2b] Sentiment analysis disabled.")
+
+            # ── Approval gate (Feature 9) ──────────────────────
+            if (
+                self.config.approval.enabled
+                and self.approval_server
+                and self.config.approval.organizer_email
+                and self.emailer
+            ):
+                decision = self._request_approval(
+                    file_path, mom_data, meeting_title, meeting_date
+                )
+                if decision == "rejected":
+                    self.logger.warning(
+                        "MOM rejected by organizer — pipeline halted for: %s",
+                        Path(file_path).name,
+                    )
+                    return
+                # "approved" or "auto_approved" → fall through to delivery steps
+
+            # ── Step 3: Teams notification ─────────────────
             teams_sent = False
             if self.teams:
-                self.logger.info("[3/4] Sending Teams Adaptive Card...")
+                self.logger.info("[3/5] Sending Teams Adaptive Card...")
                 teams_sent = self.teams.send_mom_card(mom_data, attendance=attendance_result)
                 if teams_sent:
                     self.logger.info("      Teams webhook accepted payload (delivery may be asynchronous).")
                 else:
                     self.logger.warning("      Teams webhook call failed — check URL / firewall / flow configuration.")
             else:
-                self.logger.info("[3/4] Teams skipped (not configured).")
+                self.logger.info("[3/5] Teams skipped (not configured.)")
 
             # ── Step 4: Email ─────────────────────────────────
             email_sent = False
             if self.emailer and self.config.email.recipients:
-                self.logger.info("[4/4] Sending email to %d recipient(s)...", len(self.config.email.recipients))
+                self.logger.info("[4/5] Sending email to %d recipient(s)...", len(self.config.email.recipients))
                 email_sent = self.emailer.send_mom_email(
                     mom_data   = mom_data,
                     recipients = self.config.email.recipients,
@@ -217,9 +271,30 @@ class MeetingIntelligenceSystem:
                 else:
                     self.logger.warning("      Email delivery failed — check SMTP config.")
             else:
-                self.logger.info("[4/4] Email skipped (not configured or no recipients).")
+                self.logger.info("[4/5] Email skipped (not configured or no recipients.)")
 
             self.db.mark_notification_sent(file_path, teams=teams_sent, email=email_sent)
+
+            # ── Step 5: Manager morale report (confidential) ─────
+            if (
+                self.config.sentiment.enabled
+                and sentiment_data is not None
+                and self.emailer
+                and self.config.sentiment.manager_email
+            ):
+                self.logger.info("[5/5] Sending confidential morale report to manager...")
+                sent = self.emailer.send_sentiment_email(
+                    sentiment_data=sentiment_data,
+                    mom_data=mom_data,
+                    manager_email=self.config.sentiment.manager_email,
+                )
+                if sent:
+                    self.logger.info("      Manager morale report delivered.")
+                else:
+                    self.logger.warning("      Manager morale report delivery failed.")
+            else:
+                self.logger.info("[5/5] Manager morale report skipped (disabled or not configured).")
+
             self.logger.info("✓ Completed: %s", Path(file_path).name)
 
         except Exception as exc:
@@ -266,6 +341,8 @@ class MeetingIntelligenceSystem:
         self._running = False
         if self.watcher:
             self.watcher.stop()
+        if self.approval_server:
+            self.approval_server.stop()
         sys.exit(0)
 
     # ── Utilities ─────────────────────────────────────────────
@@ -351,6 +428,86 @@ class MeetingIntelligenceSystem:
             else:
                 self.logger.warning("File no longer exists: %s", fp)
 
+    def _request_approval(
+        self,
+        file_path: str,
+        mom_data: dict,
+        meeting_title: str,
+        meeting_date: str,
+    ) -> str:
+        """
+        Send draft MOM to organizer and wait for approval/rejection.
+        Returns: 'approved', 'rejected', or 'auto_approved'.
+        Feature 9 — Draft Approval Gate.
+        """
+        token       = secrets.token_urlsafe(32)
+        base_url    = f"http://127.0.0.1:{self.config.approval.callback_port}"
+        approve_url = f"{base_url}/approve?token={token}"
+        reject_url  = f"{base_url}/reject?token={token}"
+
+        self.db.set_awaiting_approval(file_path, token)
+
+        self.emailer.send_draft_approval_email(
+            mom_data=mom_data,
+            organizer_email=self.config.approval.organizer_email,
+            approve_url=approve_url,
+            reject_url=reject_url,
+            timeout_minutes=self.config.approval.timeout_minutes,
+        )
+        self.logger.info(
+            "Draft sent to organizer (%s). Waiting up to %d min...",
+            self.config.approval.organizer_email,
+            self.config.approval.timeout_minutes,
+        )
+
+        result = self.approval_server.wait_for_decision(
+            token=token,
+            timeout_seconds=self.config.approval.timeout_minutes * 60,
+            auto_approve=self.config.approval.auto_approve,
+        )
+        self.db.set_approval_result(file_path, result)
+        return result
+
+    def run_weekly_digest(self, days_back: int = None) -> None:
+        """
+        Send a personalised weekly productivity digest to every participant
+        listed in config.digest.participant_emails (Feature 10).
+
+        Args:
+            days_back: Override the days_back setting from settings.yaml.
+        """
+        if not self.config.digest.participant_emails:
+            self.logger.error(
+                "digest.participant_emails is not configured in settings.yaml. "
+                "Add a name: email mapping for each participant who should receive a digest."
+            )
+            return
+        if not self.emailer:
+            self.logger.error(
+                "Email is not configured (EMAIL_USERNAME / EMAIL_PASSWORD not set). "
+                "Cannot send weekly digest."
+            )
+            return
+
+        self.logger.info(
+            "Starting weekly digest for %d participant(s)...",
+            len(self.config.digest.participant_emails),
+        )
+        svc = WeeklyDigestService(
+            config=self.config,
+            db=self.db,
+            llm=self.llm,
+            emailer=self.emailer,
+        )
+        results = svc.run(days_back=days_back)
+        for name, ok in results.items():
+            status = "✓" if ok else "✗ FAILED"
+            self.logger.info("  Digest %-35s %s", name, status)
+
+        sent  = sum(1 for v in results.values() if v)
+        total = len(results)
+        self.logger.info("Weekly digest complete: %d/%d sent.", sent, total)
+
 
 # ──────────────────────────────────────────────────────────────
 # CLI
@@ -373,6 +530,10 @@ Examples:
     ap.add_argument("--file",          metavar="FILE",  help="Process a single file immediately")
     ap.add_argument("--status",        action="store_true",            help="Show recent status")
     ap.add_argument("--retry-failed",  action="store_true",            help="Retry all failed files")
+    ap.add_argument("--weekly-digest", action="store_true",
+                    help="Send personal weekly digest emails to all configured participants")
+    ap.add_argument("--digest-days",   type=int, default=None, metavar="N",
+                    help="Override days_back for digest (default: from settings.yaml)")
     args = ap.parse_args()
 
     system = MeetingIntelligenceSystem(config_path=args.config)
@@ -383,6 +544,8 @@ Examples:
         system.print_status()
     elif args.retry_failed:
         system.retry_failed()
+    elif args.weekly_digest:
+        system.run_weekly_digest(days_back=args.digest_days)
     else:
         system.start_watcher()
 

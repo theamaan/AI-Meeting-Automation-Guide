@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Week in Review — {{ participant_name }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: #f0f2f5;
+      color: #1a1a2e;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .wrapper   { max-width: 680px; margin: 24px auto; }
+    .card      { background: #ffffff; border-radius: 8px; overflow: hidden;
+                 box-shadow: 0 2px 8px rgba(0,0,0,.12); margin-bottom: 16px; }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: #605e5c;
+      padding: 14px 24px 8px;
+      border-bottom: 1px solid #edebe9;
+    }
+
+    /* Stats row */
+    .stats-row {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid #edebe9;
+    }
+    .stat-block {
+      flex: 1;
+      text-align: center;
+      padding: 16px 8px;
+      border-right: 1px solid #edebe9;
+    }
+    .stat-block:last-child { border-right: none; }
+    .stat-number {
+      font-size: 28px;
+      font-weight: 700;
+      color: #0078d4;
+      display: block;
+    }
+    .stat-label { font-size: 11px; color: #605e5c; text-transform: uppercase; letter-spacing: .5px; }
+
+    /* Narrative */
+    .narrative-block {
+      padding: 16px 24px;
+      font-size: 14px;
+      color: #323130;
+      font-style: italic;
+      border-left: 4px solid #0078d4;
+      background: #f4f9ff;
+      margin: 0;
+    }
+
+    /* Action items */
+    .item-list { list-style: none; padding: 12px 24px 16px; }
+    .item-list li {
+      padding: 5px 0 5px 20px;
+      font-size: 13px;
+      color: #323130;
+      position: relative;
+      border-bottom: 1px dotted #f3f2f1;
+    }
+    .item-list li:last-child { border-bottom: none; }
+    .item-list li::before { content: "›"; position: absolute; left: 6px; color: #0078d4; font-weight: 700; }
+    .item-meta { font-size: 11px; color: #a19f9d; margin-left: 6px; }
+
+    /* Recurring blockers */
+    .blocker-box {
+      margin: 0 24px 16px;
+      padding: 12px 16px;
+      border-radius: 4px;
+      background: #fff4ce;
+      border-left: 4px solid #d39300;
+    }
+    .blocker-box p { font-size: 13px; color: #7d5b00; }
+    .blocker-box ul { margin-top: 6px; padding-left: 18px; }
+    .blocker-box li { font-size: 13px; color: #7d5b00; padding: 2px 0; }
+
+    /* Meeting breakdown */
+    table.breakdown {
+      width: calc(100% - 48px);
+      margin: 0 24px 16px;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    table.breakdown th {
+      text-align: left;
+      padding: 7px 10px;
+      background: #f3f2f1;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      color: #605e5c;
+      border-bottom: 2px solid #edebe9;
+    }
+    table.breakdown td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #f3f2f1;
+      color: #323130;
+      vertical-align: top;
+    }
+    table.breakdown tr:last-child td { border-bottom: none; }
+    .absent-row td { color: #a19f9d; font-style: italic; }
+
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: #a19f9d;
+    }
+    .personal-note {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 12px;
+      background: #f3f2f1;
+      border-radius: 4px;
+      font-weight: 600;
+      color: #605e5c;
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="card">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background: linear-gradient(135deg, #0078d4 0%, #00437a 100%); background-color: #0078d4; border-radius: 8px 8px 0 0;">
+      <tr>
+        <td style="padding: 24px 32px;">
+          <h1 style="color: #ffffff !important; font-size: 20px; font-weight: 700; margin: 0 0 4px 0;
+                     font-family: 'Segoe UI', Arial, sans-serif;">📊 Your Week in Review</h1>
+          <p style="color: #ffffff !important; font-size: 13px; margin: 0 0 4px 0; opacity: .9;
+                    font-family: 'Segoe UI', Arial, sans-serif;">
+            {{ participant_name }}
+          </p>
+          <p style="color: #ffffff !important; font-size: 12px; margin: 0; opacity: .75;
+                    font-family: 'Segoe UI', Arial, sans-serif;">
+            {{ date_range.start }} → {{ date_range.end }}
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Stats row -->
+    <div class="stats-row">
+      <div class="stat-block">
+        <span class="stat-number">{{ data.meetings_attended }}</span>
+        <span class="stat-label">Meetings Attended</span>
+      </div>
+      <div class="stat-block">
+        <span class="stat-number">{{ data.meetings_absent }}</span>
+        <span class="stat-label">Absent</span>
+      </div>
+      <div class="stat-block">
+        <span class="stat-number">{{ data.action_items | length }}</span>
+        <span class="stat-label">Action Items</span>
+      </div>
+      <div class="stat-block">
+        <span class="stat-number">{{ data.blockers | length }}</span>
+        <span class="stat-label">Blockers Raised</span>
+      </div>
+    </div>
+
+    <!-- AI Narrative -->
+    {% if data.narrative %}
+    <div class="section-title">🤖 AI Summary</div>
+    <div class="narrative-block">"{{ data.narrative }}"</div>
+    {% endif %}
+
+    <!-- Recurring Blockers (only if present) -->
+    {% if data.recurring_blockers %}
+    <div class="section-title" style="margin-top: 8px;">🔁 Recurring Blockers</div>
+    <div class="blocker-box">
+      <p><strong>The following blocker(s) appeared in {{ data.total_meetings }} meeting(s) this week:</strong></p>
+      <ul>
+        {% for b in data.recurring_blockers %}
+        <li>{{ b }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- Action Items -->
+    {% if data.action_items %}
+    <div class="section-title">✅ Your Action Items This Week</div>
+    <ul class="item-list">
+      {% for item in data.action_items %}
+      <li>
+        {{ item.text }}
+        {% if item.meeting_date %}
+        <span class="item-meta">({{ item.meeting_date }})</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="section-title">✅ Action Items</div>
+    <p style="padding: 12px 24px 16px; font-size: 13px; color: #a19f9d;">No action items recorded this week.</p>
+    {% endif %}
+
+    <!-- Meeting Breakdown -->
+    {% if data.meetings_detail %}
+    <div class="section-title">📅 Meeting Breakdown</div>
+    <table class="breakdown">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Meeting</th>
+          <th>Your Update</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for meeting in data.meetings_detail %}
+        <tr {% if meeting.was_absent %}class="absent-row"{% endif %}>
+          <td style="white-space: nowrap;">{{ meeting.date }}</td>
+          <td>{{ meeting.title }}</td>
+          <td>
+            {% if meeting.was_absent %}
+              Absent
+            {% else %}
+              {% if meeting.today %}
+                {% for item in meeting.today[:2] %}{{ item }}{% if not loop.last %}; {% endif %}{% endfor %}
+                {% if meeting.today | length > 2 %}&hellip;{% endif %}
+              {% else %}
+                <span style="color: #a19f9d;">—</span>
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Generated {{ generated_at }} by AI Meeting Intelligence System<br/>
+    <span class="personal-note">👤 This report was sent only to you.</span>
+  </div>
+
+</div>
+</body>
+</html>

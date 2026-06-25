@@ -9,7 +9,7 @@ import logging
 import yaml
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 try:
     from dotenv import load_dotenv as _load_dotenv
@@ -63,11 +63,39 @@ class EmailConfig:
 
 
 @dataclass
+class SentimentConfig:
+    """Feature 8 — Morale Signal Detection."""
+    enabled: bool = False
+    manager_email: str = ""
+
+
+@dataclass
+class ApprovalConfig:
+    """Feature 9 — Draft Approval Gate."""
+    enabled: bool = False
+    organizer_email: str = ""
+    callback_port: int = 8765
+    timeout_minutes: int = 30
+    auto_approve: bool = True   # True = auto-approve on timeout; False = auto-reject
+
+
+@dataclass
+class DigestConfig:
+    """Feature 10 — Personal Weekly Digest."""
+    enabled: bool = False
+    days_back: int = 7
+    participant_emails: Dict[str, str] = field(default_factory=dict)  # name → email
+
+
+@dataclass
 class AppConfig:
     watcher: WatcherConfig = field(default_factory=WatcherConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
     teams: TeamsConfig = field(default_factory=TeamsConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
+    sentiment: SentimentConfig = field(default_factory=SentimentConfig)
+    approval: ApprovalConfig = field(default_factory=ApprovalConfig)
+    digest: DigestConfig = field(default_factory=DigestConfig)
     expected_participants: List[str] = field(default_factory=list)
     db_path: str = "data/meetings.db"
     log_level: str = "INFO"
@@ -141,6 +169,22 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
         config.email.recipients        = e.get("recipients", [])
         config.email.enabled           = bool(e.get("enabled", True))
 
+        s = data.get("sentiment", {})
+        config.sentiment.enabled       = bool(s.get("enabled", False))
+        config.sentiment.manager_email = s.get("manager_email", "")
+
+        a = data.get("approval", {})
+        config.approval.enabled           = bool(a.get("enabled", False))
+        config.approval.organizer_email   = a.get("organizer_email", "")
+        config.approval.callback_port     = int(a.get("callback_port", 8765))
+        config.approval.timeout_minutes   = int(a.get("timeout_minutes", 30))
+        config.approval.auto_approve      = bool(a.get("auto_approve", True))
+
+        d = data.get("digest", {})
+        config.digest.enabled            = bool(d.get("enabled", False))
+        config.digest.days_back          = int(d.get("days_back", 7))
+        config.digest.participant_emails = dict(d.get("participant_emails", {}) or {})
+
         config.db_path                 = data.get("db_path", config.db_path)
         config.log_level               = data.get("log_level", config.log_level)
         config.log_file                = data.get("log_file", config.log_file)
@@ -149,11 +193,13 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
         logger.warning(f"Config file not found: {config_path} — using defaults + env vars.")
 
     # 2. Overlay environment variables (secrets should live here only)
-    config.teams.webhook_url  = os.getenv("TEAMS_WEBHOOK_URL",  config.teams.webhook_url)
-    config.email.username     = os.getenv("EMAIL_USERNAME",     config.email.username)
-    config.email.password     = os.getenv("EMAIL_PASSWORD",     config.email.password)
-    config.watcher.watch_path = os.getenv("WATCH_PATH",         config.watcher.watch_path)
-    config.ollama.base_url    = os.getenv("OLLAMA_BASE_URL",     config.ollama.base_url)
+    config.teams.webhook_url         = os.getenv("TEAMS_WEBHOOK_URL",         config.teams.webhook_url)
+    config.email.username            = os.getenv("EMAIL_USERNAME",             config.email.username)
+    config.email.password            = os.getenv("EMAIL_PASSWORD",             config.email.password)
+    config.watcher.watch_path        = os.getenv("WATCH_PATH",                 config.watcher.watch_path)
+    config.ollama.base_url           = os.getenv("OLLAMA_BASE_URL",            config.ollama.base_url)
+    config.sentiment.manager_email   = os.getenv("SENTIMENT_MANAGER_EMAIL",   config.sentiment.manager_email)
+    config.approval.organizer_email  = os.getenv("APPROVAL_ORGANIZER_EMAIL",  config.approval.organizer_email)
 
     return config
 

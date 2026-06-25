@@ -128,3 +128,130 @@ class EmailService:
                 server.ehlo()
             server.login(self.username, self.password)
             server.sendmail(self.username, recipients, msg.as_string())
+
+    # ── Feature additions ─────────────────────────────────────
+
+    def send_sentiment_email(
+        self,
+        sentiment_data: Dict,
+        mom_data: Dict,
+        manager_email: str,
+    ) -> bool:
+        """
+        Send a confidential morale report to the manager only (Feature 8).
+        Never sent to the full team — single recipient only.
+        Returns True on success, False on any SMTP error.
+        """
+        if not manager_email:
+            logger.warning("No manager_email configured — skipping morale report.")
+            return False
+        try:
+            template = self.jinja_env.get_template("email_template_sentiment.html")
+            html_body = template.render(
+                sentiment=sentiment_data,
+                mom=mom_data,
+                generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            title  = mom_data.get("meeting_title", "Team Meeting")
+            date   = mom_data.get("meeting_date",  datetime.now().strftime("%Y-%m-%d"))
+            flags  = sentiment_data.get("flags_count", 0)
+            subject = (
+                f"[CONFIDENTIAL] Morale Report — {title} — {date}"
+                + (f" — ⚑ {flags} flag(s)" if flags else "")
+            )
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"]    = f"{self.sender_name} <{self.username}>"
+            msg["To"]      = manager_email
+            msg.attach(MIMEText(html_body, "html", "utf-8"))
+            self._smtp_send(msg, [manager_email])
+            logger.info("Morale report sent to manager: %s", manager_email)
+            return True
+        except smtplib.SMTPException as exc:
+            logger.error("SMTP error sending morale report: %s", exc)
+            return False
+        except Exception as exc:
+            logger.error("Morale report send failed: %s", exc, exc_info=True)
+            return False
+
+    def send_draft_approval_email(
+        self,
+        mom_data: Dict,
+        organizer_email: str,
+        approve_url: str,
+        reject_url: str,
+        timeout_minutes: int,
+    ) -> bool:
+        """
+        Send a draft MOM to the organizer for approval before team delivery (Feature 9).
+        Returns True on success, False on any SMTP error.
+        """
+        if not organizer_email:
+            logger.warning("No organizer_email configured — skipping approval draft.")
+            return False
+        try:
+            template = self.jinja_env.get_template("email_draft_approval.html")
+            html_body = template.render(
+                mom=mom_data,
+                approve_url=approve_url,
+                reject_url=reject_url,
+                timeout_minutes=timeout_minutes,
+                generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            title   = mom_data.get("meeting_title", "Team Meeting")
+            date    = mom_data.get("meeting_date",  datetime.now().strftime("%Y-%m-%d"))
+            subject = f"[ACTION REQUIRED] Approve MOM Draft — {title} — {date}"
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"]    = f"{self.sender_name} <{self.username}>"
+            msg["To"]      = organizer_email
+            msg.attach(MIMEText(html_body, "html", "utf-8"))
+            self._smtp_send(msg, [organizer_email])
+            logger.info("Draft approval email sent to organizer: %s", organizer_email)
+            return True
+        except smtplib.SMTPException as exc:
+            logger.error("SMTP error sending draft approval email: %s", exc)
+            return False
+        except Exception as exc:
+            logger.error("Draft approval email send failed: %s", exc, exc_info=True)
+            return False
+
+    def send_digest_email(
+        self,
+        participant_name: str,
+        digest_data: Dict,
+        recipient_email: str,
+        date_range: Dict,
+    ) -> bool:
+        """
+        Send a personal weekly productivity digest to one participant (Feature 10).
+        Returns True on success, False on any SMTP error.
+        """
+        if not recipient_email:
+            logger.warning("No email for %s — skipping digest.", participant_name)
+            return False
+        try:
+            template = self.jinja_env.get_template("email_digest.html")
+            html_body = template.render(
+                participant_name=participant_name,
+                data=digest_data,
+                date_range=date_range,
+                generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            start   = date_range.get("start", "")
+            end     = date_range.get("end",   "")
+            subject = f"📊 Your Week in Review — {start} to {end}"
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"]    = f"{self.sender_name} <{self.username}>"
+            msg["To"]      = recipient_email
+            msg.attach(MIMEText(html_body, "html", "utf-8"))
+            self._smtp_send(msg, [recipient_email])
+            logger.info("Digest sent to %s (%s)", participant_name, recipient_email)
+            return True
+        except smtplib.SMTPException as exc:
+            logger.error("SMTP error sending digest to %s: %s", participant_name, exc)
+            return False
+        except Exception as exc:
+            logger.error("Digest send failed for %s: %s", participant_name, exc, exc_info=True)
+            return False

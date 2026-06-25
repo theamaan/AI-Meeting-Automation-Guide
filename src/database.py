@@ -80,6 +80,9 @@ class Database:
             for col_def in [
                 "ALTER TABLE meetings ADD COLUMN attendance_json TEXT",
                 "ALTER TABLE meetings ADD COLUMN file_hash TEXT",
+                "ALTER TABLE meetings ADD COLUMN sentiment_json TEXT",
+                "ALTER TABLE meetings ADD COLUMN approval_token TEXT",
+                "ALTER TABLE meetings ADD COLUMN approval_status TEXT DEFAULT 'not_required'",
             ]:
                 try:
                     conn.execute(col_def)
@@ -219,5 +222,69 @@ class Database:
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT file_path, file_name, error_message FROM meetings WHERE status = 'failed'"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ── Feature additions ─────────────────────────────────────
+
+    def update_sentiment(self, file_path: str, sentiment: Dict):
+        """Store sentiment analysis result (Feature 8 — Morale Detection)."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE meetings SET sentiment_json = ? WHERE file_path = ?",
+                (json.dumps(sentiment, ensure_ascii=False), file_path),
+            )
+
+    def set_awaiting_approval(self, file_path: str, token: str):
+        """Mark meeting as awaiting organizer approval before team delivery (Feature 9)."""
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE meetings
+                SET approval_token = ?, approval_status = 'pending', status = 'awaiting_approval'
+                WHERE file_path = ?
+                """,
+                (token, file_path),
+            )
+
+    def get_pending_approval_by_token(self, token: str) -> Optional[Dict]:
+        """Return meeting details for a pending approval token (Feature 9)."""
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT file_path, mom_json, meeting_title
+                FROM meetings
+                WHERE approval_token = ? AND approval_status = 'pending'
+                """,
+                (token,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def set_approval_result(self, file_path: str, result: str):
+        """Record the approval decision and update meeting status accordingly (Feature 9)."""
+        new_status = "completed" if result in ("approved", "auto_approved") else "rejected"
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE meetings
+                SET approval_status = ?, status = ?
+                WHERE file_path = ?
+                """,
+                (result, new_status, file_path),
+            )
+
+    def get_meetings_by_date_range(self, start_date: str, end_date: str) -> List[Dict]:
+        """Return completed meetings within an inclusive date range YYYY-MM-DD (Feature 10)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, file_name, meeting_title, meeting_date,
+                       mom_json, attendance_json
+                FROM meetings
+                WHERE status = 'completed'
+                  AND meeting_date BETWEEN ? AND ?
+                ORDER BY meeting_date ASC
+                """,
+                (start_date, end_date),
             ).fetchall()
             return [dict(row) for row in rows]

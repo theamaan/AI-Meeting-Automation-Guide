@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Morale Report — {{ mom.meeting_title }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: #f0f2f5;
+      color: #1a1a2e;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .wrapper   { max-width: 720px; margin: 24px auto; }
+    .card      { background: #ffffff; border-radius: 8px; overflow: hidden;
+                 box-shadow: 0 2px 8px rgba(0,0,0,.12); margin-bottom: 16px; }
+
+    /* Header — orange/amber to signal confidential/sensitive */
+    .header {
+      background: linear-gradient(135deg, #c05000 0%, #7a2e00 100%);
+      color: #ffffff;
+      padding: 24px 32px;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: #ffffff !important; }
+    .header .meta { font-size: 13px; opacity: .88; color: #ffffff !important; }
+    .confidential-badge {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 3px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      background: rgba(255,255,255,.2);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.4);
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: #605e5c;
+      padding: 14px 24px 8px;
+      border-bottom: 1px solid #edebe9;
+    }
+
+    .morale-block {
+      padding: 14px 24px;
+      font-size: 14px;
+      color: #323130;
+      font-style: italic;
+      background: #fef9f3;
+      border-left: 4px solid #c05000;
+    }
+
+    /* Flags summary banner */
+    .flags-banner {
+      margin: 0 24px 0;
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .flags-banner.has-flags {
+      background: #fde7e9;
+      border-left: 4px solid #d83b01;
+      color: #a4262c;
+    }
+    .flags-banner.no-flags {
+      background: #dff6dd;
+      border-left: 4px solid #107c10;
+      color: #0b5a08;
+    }
+
+    /* Member table */
+    table.member-table {
+      width: calc(100% - 48px);
+      margin: 16px 24px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.member-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: #f3f2f1;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: #605e5c;
+      border-bottom: 2px solid #edebe9;
+    }
+    table.member-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #f3f2f1;
+      vertical-align: top;
+    }
+    table.member-table tr:last-child td { border-bottom: none; }
+    table.member-table tr.flagged-row { background: #fff8f7; }
+
+    .tone-pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .tone-confident  { background: #dff6dd; color: #107c10; }
+    .tone-neutral    { background: #f3f2f1; color: #605e5c; }
+    .tone-uncertain  { background: #fff4ce; color: #7d5b00; }
+    .tone-frustrated { background: #fde7e9; color: #a4262c; }
+    .tone-disengaged { background: #e8e8e8; color: #3a3a3a; }
+
+    .signal-list { list-style: none; padding: 0; margin: 4px 0 0; }
+    .signal-list li {
+      font-size: 12px;
+      color: #605e5c;
+      padding: 1px 0 1px 14px;
+      position: relative;
+    }
+    .signal-list li::before { content: "›"; position: absolute; left: 4px; color: #a19f9d; }
+
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: #a19f9d;
+    }
+    .footer .not-shared {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 12px;
+      background: #f3f2f1;
+      border-radius: 4px;
+      font-weight: 600;
+      color: #605e5c;
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="card">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background: linear-gradient(135deg, #c05000 0%, #7a2e00 100%); background-color: #c05000; border-radius: 8px 8px 0 0;">
+      <tr>
+        <td style="padding: 24px 32px;">
+          <h1 style="color: #ffffff !important; font-size: 20px; font-weight: 700; margin: 0 0 4px 0;
+                     font-family: 'Segoe UI', Arial, sans-serif;">🧠 Team Morale Report</h1>
+          <p style="color: #ffffff !important; font-size: 13px; margin: 0 0 10px 0; opacity: .9;
+                    font-family: 'Segoe UI', Arial, sans-serif;">
+            {{ mom.meeting_title }} &nbsp;•&nbsp; {{ mom.meeting_date }}
+          </p>
+          <span style="display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 11px;
+                       font-weight: 700; background: rgba(255,255,255,.2); color: #fff;
+                       border: 1px solid rgba(255,255,255,.4); letter-spacing: .6px;">
+            🔒 CONFIDENTIAL — NOT SENT TO TEAM
+          </span>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Team Morale -->
+    <div class="section-title">🏢 Team Morale</div>
+    <div class="morale-block">"{{ sentiment.team_morale }}"</div>
+
+    <!-- Flags Banner -->
+    {% if sentiment.flags_count > 0 %}
+    <div style="padding: 16px 24px 0;">
+      <div class="flags-banner has-flags">
+        ⚑ &nbsp;{{ sentiment.flags_count }} member{{ 's' if sentiment.flags_count != 1 else '' }}
+        flagged for follow-up
+        ({{ 'frustrated' if sentiment.flags_count == 1 else 'frustrated or disengaged tone detected' }})
+      </div>
+    </div>
+    {% else %}
+    <div style="padding: 16px 24px 0;">
+      <div class="flags-banner no-flags">✓ &nbsp;No team members flagged — morale signals are within normal range.</div>
+    </div>
+    {% endif %}
+
+    <!-- Flagged Members (only if any) -->
+    {% set flagged = sentiment.participants | selectattr("flag_for_followup") | list %}
+    {% if flagged %}
+    <div class="section-title" style="margin-top: 16px;">⚑ Members Flagged for Follow-Up</div>
+    <table class="member-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Tone</th>
+          <th>Signals Detected</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for person in flagged %}
+        <tr class="flagged-row">
+          <td style="font-weight: 600;">{{ person.name }}</td>
+          <td>
+            <span class="tone-pill tone-{{ person.tone }}">
+              {% if person.tone == 'frustrated' %}🔴{% elif person.tone == 'disengaged' %}⬛{% endif %}
+              {{ person.tone | capitalize }}
+            </span>
+          </td>
+          <td>
+            {% if person.signals %}
+            <ul class="signal-list">
+              {% for signal in person.signals %}
+              <li>{{ signal }}</li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <span style="color: #a19f9d; font-size: 12px;">No specific signals recorded</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <!-- All Members -->
+    <div class="section-title" style="margin-top: 8px;">👥 Full Team Tone Overview</div>
+    <table class="member-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Tone</th>
+          <th>Confidence</th>
+          <th>Signals</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for person in sentiment.participants %}
+        <tr>
+          <td style="font-weight: 600;">{{ person.name }}</td>
+          <td>
+            <span class="tone-pill tone-{{ person.tone }}">
+              {% if person.tone == 'confident' %}🟢
+              {% elif person.tone == 'frustrated' %}🔴
+              {% elif person.tone == 'uncertain' %}🟡
+              {% elif person.tone == 'disengaged' %}⬛
+              {% else %}⚪{% endif %}
+              {{ person.tone | capitalize }}
+            </span>
+          </td>
+          <td style="color: #605e5c; font-size: 12px;">
+            {{ (person.confidence_score * 100) | int }}%
+          </td>
+          <td>
+            {% if person.signals %}
+            <ul class="signal-list">
+              {% for signal in person.signals[:3] %}
+              <li>{{ signal }}</li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <span style="color: #a19f9d; font-size: 12px;">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Generated {{ generated_at }} by AI Meeting Intelligence System<br/>
+    <span class="not-shared">🔒 This report was sent only to you and was NOT shared with the team.</span>
+  </div>
+
+</div>
+</body>
+</html>

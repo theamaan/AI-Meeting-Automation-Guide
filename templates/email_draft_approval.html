@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>[DRAFT] MOM — {{ mom.meeting_title }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: #f0f2f5;
+      color: #1a1a2e;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .wrapper   { max-width: 720px; margin: 24px auto; }
+    .card      { background: #ffffff; border-radius: 8px; overflow: hidden;
+                 box-shadow: 0 2px 8px rgba(0,0,0,.12); margin-bottom: 16px; }
+
+    /* Draft banner */
+    .draft-banner {
+      background: #fff4ce;
+      border: 2px solid #d39300;
+      border-radius: 8px;
+      padding: 18px 24px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    .draft-banner h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #7d5b00;
+      margin-bottom: 6px;
+    }
+    .draft-banner p {
+      font-size: 13px;
+      color: #7d5b00;
+      margin-bottom: 14px;
+    }
+    .btn-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-block;
+      padding: 12px 28px;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none !important;
+      letter-spacing: .3px;
+    }
+    .btn-approve { background: #107c10; color: #ffffff !important; }
+    .btn-reject  { background: #d83b01; color: #ffffff !important; }
+
+    /* Timeout note */
+    .timeout-note {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #605e5c;
+      text-align: center;
+      padding: 0 16px;
+    }
+    .timeout-note strong { color: #7d5b00; }
+
+    /* MOM Preview */
+    .header-preview {
+      background: linear-gradient(135deg, #0078d4 0%, #00437a 100%);
+      color: #ffffff;
+      padding: 20px 28px;
+      border-radius: 8px 8px 0 0;
+    }
+    .header-preview h1 { font-size: 18px; font-weight: 700; color: #ffffff !important; margin-bottom: 4px; }
+    .header-preview .meta { font-size: 12px; color: #ffffff !important; opacity: .88; }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: #605e5c;
+      padding: 12px 20px 8px;
+      border-bottom: 1px solid #edebe9;
+    }
+    .team-summary { padding: 12px 20px; font-size: 13px; color: #323130; }
+
+    .person-row {
+      display: flex;
+      align-items: center;
+      padding: 10px 20px;
+      border-bottom: 1px solid #f3f2f1;
+      gap: 12px;
+    }
+    .person-row:last-child { border-bottom: none; }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #0078d4; color: #fff;
+      font-size: 13px; font-weight: 700;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .person-info { flex: 1; }
+    .person-name { font-weight: 700; font-size: 13px; }
+    .person-summary { font-size: 12px; color: #605e5c; margin-top: 1px; }
+    .status-indicator {
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: #a19f9d;
+    }
+    .localhost-note {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 12px;
+      background: #f3f2f1;
+      border-radius: 4px;
+      font-weight: 600;
+      color: #605e5c;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Draft action banner -->
+  <div class="draft-banner">
+    <h2>⏳ DRAFT — Awaiting Your Approval</h2>
+    <p>
+      This MOM has been generated but has <strong>not yet been sent to the team</strong>.
+      Review the summary below, then approve or reject.
+    </p>
+    <div class="btn-row">
+      <a href="{{ approve_url }}" class="btn btn-approve">✅ Approve &amp; Send to Team</a>
+      <a href="{{ reject_url }}"  class="btn btn-reject" >❌ Reject &amp; Discard</a>
+    </div>
+    <p class="timeout-note">
+      If no action is taken within <strong>{{ timeout_minutes }} minute{{ 's' if timeout_minutes != 1 else '' }}</strong>,
+      this draft will be <strong>automatically approved</strong> and sent to the team.
+    </p>
+    <p class="timeout-note" style="margin-top: 6px;">
+      ⓘ Approval links only work from the machine running the AI Meeting System.
+    </p>
+  </div>
+
+  <!-- MOM Preview -->
+  <div class="card">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background: linear-gradient(135deg, #0078d4 0%, #00437a 100%); background-color: #0078d4; border-radius: 8px 8px 0 0;">
+      <tr>
+        <td style="padding: 20px 28px;">
+          <h1 style="color: #ffffff !important; font-size: 18px; font-weight: 700; margin: 0 0 4px 0;
+                     font-family: 'Segoe UI', Arial, sans-serif;">📋 Draft: Minutes of Meeting</h1>
+          <p style="color: #ffffff !important; font-size: 12px; margin: 0 0 10px 0; opacity: .9;
+                    font-family: 'Segoe UI', Arial, sans-serif;">
+            {{ mom.meeting_title }} &nbsp;•&nbsp; {{ mom.meeting_date }}
+          </p>
+          {% if mom.overall_status == 'ALL_CLEAR' %}
+            <span style="background: #107c10; color: #fff; padding: 3px 12px; border-radius: 20px;
+                         font-size: 11px; font-weight: 700;">✅ ALL CLEAR</span>
+          {% else %}
+            <span style="background: #d83b01; color: #fff; padding: 3px 12px; border-radius: 20px;
+                         font-size: 11px; font-weight: 700;">⚠️ HAS ISSUES</span>
+          {% endif %}
+        </td>
+      </tr>
+    </table>
+
+    <div class="section-title">🏢 Team Summary</div>
+    <div class="team-summary">{{ mom.team_summary }}</div>
+
+    {% if mom.participants %}
+    <div class="section-title">👥 Participants ({{ mom.participants | length }})</div>
+    {% for person in mom.participants %}
+    <div class="person-row">
+      <div class="avatar">{{ person.name[0] | upper }}</div>
+      <div class="person-info">
+        <div class="person-name">{{ person.name }}</div>
+        <div class="person-summary">{{ person.progress_summary[:100] }}{% if person.progress_summary | length > 100 %}…{% endif %}</div>
+      </div>
+      <div class="status-indicator">
+        {% if person.blockers %}🔴{% else %}🟢{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if mom.key_decisions %}
+    <div class="section-title">🔑 Key Decisions</div>
+    <ul style="padding: 10px 20px 16px 36px; font-size: 13px; color: #323130;">
+      {% for decision in mom.key_decisions %}
+      <li style="padding: 3px 0;">{{ decision }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Generated {{ generated_at }} by AI Meeting Intelligence System<br/>
+    <span class="localhost-note">
+      ⓘ Approve/Reject links are only accessible from the machine running the system.
+    </span>
+  </div>
+
+</div>
+</body>
+</html>

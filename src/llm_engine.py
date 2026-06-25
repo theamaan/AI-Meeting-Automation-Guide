@@ -474,3 +474,226 @@ class OllamaLLMEngine:
                 for p in (participants or ["Unknown"])
             ],
         }
+
+
+# ──────────────────────────────────────────────────────────────
+# Sentiment analysis prompt (Feature 8)
+# ──────────────────────────────────────────────────────────────
+
+SENTIMENT_PROMPT_TEMPLATE = """Analyze the tone and morale signals in this meeting transcript.
+
+MEETING TITLE: {meeting_title}
+MEETING DATE: {meeting_date}
+KNOWN PARTICIPANTS: {participants}
+
+─── TRANSCRIPT ───
+{transcript}
+─────────────────
+
+STRICT RULES:
+1. Analyse ONLY what is explicitly present in the transcript — do NOT infer or assume.
+2. For each participant, identify tone signals (specific phrases or patterns that indicate their emotional state).
+3. tone must be exactly one of: "confident", "frustrated", "uncertain", "disengaged", "neutral"
+4. confidence_score: 0.0 to 1.0 reflecting how strongly the evidence supports the tone label.
+5. flag_for_followup: true ONLY when tone is "frustrated" or "disengaged" AND evidence is strong (confidence_score >= 0.7).
+6. flags_count must equal the exact count of participants where flag_for_followup is true.
+7. If a participant did not speak or has insufficient data, set tone="neutral", confidence_score=0.3, signals=[], flag_for_followup=false.
+8. team_morale: one concise sentence summarising the overall team tone.
+
+OUTPUT — return ONLY this JSON, nothing else:
+{{
+  "team_morale": "one-sentence team-level observation",
+  "flags_count": 0,
+  "participants": [
+    {{
+      "name": "Full Name",
+      "tone": "neutral",
+      "confidence_score": 0.5,
+      "signals": ["phrase or pattern from transcript"],
+      "flag_for_followup": false
+    }}
+  ]
+}}
+
+Return ONLY the JSON object. Begin with {{ and end with }}."""
+
+
+# Extend OllamaLLMEngine with sentiment + digest methods
+# These are defined as module-level functions that are bound to the class
+# to keep the class definition unmodified except by monkey-patching at import time.
+# Instead, we subclass — but to avoid breaking existing usages, we extend in-place
+# by adding the methods directly to OllamaLLMEngine via assignment after class definition.
+
+def _analyze_sentiment(
+    self,
+    transcript_text: str,
+    participants: List[str],
+    meeting_title: str = "",
+    meeting_date: str = "",
+) -> Dict:
+    """
+    Run a second LLM pass to detect per-person tone and morale signals.
+    Returns a validated sentiment dict or a safe all-neutral fallback.
+    Feature 8 — Morale Signal Detection.
+    """
+    prompt = SENTIMENT_PROMPT_TEMPLATE.format(
+        transcript=self._truncate_transcript(transcript_text, self.max_transcript_chars),
+        participants=", ".join(participants) if participants else "Not identified",
+        meeting_title=meeting_title or "Team Meeting",
+        meeting_date=meeting_date or "Not specified",
+    )
+
+    for attempt in range(1, self.max_retries + 1):
+        logger.info("Sentiment analysis attempt %d/%d", attempt, self.max_retries)
+        try:
+            raw = self._call_ollama(prompt)
+            parsed = self._extract_json(raw)
+            validated = self._validate_sentiment(parsed, participants)
+            logger.info("Sentiment analysis succeeded on attempt %d", attempt)
+            return validated
+        except json.JSONDecodeError as exc:
+            logger.warning("Sentiment JSON parse failed attempt %d: %s", attempt, exc)
+        except requests.exceptions.Timeout:
+            logger.warning("Sentiment LLM timeout on attempt %d", attempt)
+        except Exception as exc:
+            logger.error("Sentiment LLM error attempt %d: %s", attempt, exc, exc_info=True)
+
+        if attempt < self.max_retries:
+            time.sleep(5 * attempt)
+
+    logger.error("All sentiment attempts failed. Using neutral fallback.")
+    return self._fallback_sentiment(participants)
+
+
+def _validate_sentiment(self, data: Dict, participants: List[str]) -> Dict:
+    """Validate sentiment JSON structure and fill gaps."""
+    valid_tones = {"confident", "frustrated", "uncertain", "disengaged", "neutral"}
+
+    data.setdefault("team_morale", "No morale data available.")
+    data.setdefault("participants", [])
+    data.setdefault("flags_count", 0)
+
+    if not isinstance(data["participants"], list):
+        data["participants"] = []
+
+    # Normalise each participant entry
+    existing_names_lower = {}
+    clean_participants = []
+    for person in data["participants"]:
+        name = str(person.get("name", "")).strip()
+        if not name:
+            continue
+        person["name"] = name
+        # Clamp tone to valid set
+        if person.get("tone") not in valid_tones:
+            person["tone"] = "neutral"
+        # Clamp confidence_score to [0.0, 1.0]
+        try:
+            person["confidence_score"] = max(0.0, min(1.0, float(person.get("confidence_score", 0.5))))
+        except (TypeError, ValueError):
+            person["confidence_score"] = 0.5
+        person.setdefault("signals", [])
+        if not isinstance(person["signals"], list):
+            person["signals"] = []
+        person.setdefault("flag_for_followup", False)
+        existing_names_lower[name.lower()] = True
+        clean_participants.append(person)
+    data["participants"] = clean_participants
+
+    # Add missing whitelist members with neutral defaults
+    for name in (participants or []):
+        if name.strip().lower() not in existing_names_lower:
+            data["participants"].append({
+                "name": name.strip(),
+                "tone": "neutral",
+                "confidence_score": 0.3,
+                "signals": [],
+                "flag_for_followup": False,
+            })
+
+    # Recompute flags_count from actual data (don't trust LLM's count)
+    data["flags_count"] = sum(
+        1 for p in data["participants"] if p.get("flag_for_followup") is True
+    )
+    return data
+
+
+def _fallback_sentiment(self, participants: List[str]) -> Dict:
+    """Return an all-neutral, no-flags sentiment result for use when LLM fails."""
+    return {
+        "team_morale": "Sentiment analysis unavailable — LLM processing failed.",
+        "flags_count": 0,
+        "participants": [
+            {
+                "name": p,
+                "tone": "neutral",
+                "confidence_score": 0.5,
+                "signals": [],
+                "flag_for_followup": False,
+            }
+            for p in (participants or [])
+        ],
+    }
+
+
+def _generate_digest_narrative(
+    self,
+    participant_name: str,
+    data: Dict,
+) -> str:
+    """
+    Generate a 2-3 sentence plain-text narrative of a participant's week.
+    Uses temperature 0.3 for natural prose (not JSON).
+    Feature 10 — Personal Weekly Digest.
+    """
+    prompt = (
+        f"Write a 2-3 sentence professional, factual summary of this person's work week.\n"
+        f"Base it ONLY on the data provided. Do NOT add advice, judgement, or assumptions.\n\n"
+        f"Person: {participant_name}\n"
+        f"Meetings attended: {data.get('meetings_attended', 0)} of {data.get('total_meetings', 0)}\n"
+        f"Meetings absent: {data.get('meetings_absent', 0)}\n"
+        f"Action items this week: {len(data.get('action_items', []))}\n"
+        f"Blockers raised: {len(data.get('blockers', []))}\n"
+        f"Recurring blockers: {', '.join(data.get('recurring_blockers', [])) or 'None'}\n\n"
+        f"Write ONLY the narrative paragraph. No bullet points, no JSON, no headers."
+    )
+
+    # Use a slightly higher temperature for natural prose
+    original_temp = self.temperature
+    payload = {
+        "model": self.model,
+        "prompt": prompt,
+        "system": (
+            "You are a professional meeting analyst. "
+            "Write factual, concise, third-person narrative summaries. "
+            "Do NOT output JSON, markdown, or bullet points."
+        ),
+        "stream": False,
+        "options": {
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "num_predict": 200,
+        },
+    }
+    try:
+        response = requests.post(self.generate_url, json=payload, timeout=60)
+        if response.ok:
+            text = response.json().get("response", "").strip()
+            if text:
+                return text
+    except Exception as exc:
+        logger.warning("Digest narrative LLM call failed for %s: %s", participant_name, exc)
+
+    attended = data.get("meetings_attended", 0)
+    total = data.get("total_meetings", 0)
+    return (
+        f"{participant_name} participated in {attended} of {total} meeting(s) this week. "
+        f"{len(data.get('action_items', []))} action item(s) were recorded."
+    )
+
+
+# Bind the new methods to OllamaLLMEngine without altering the class body
+OllamaLLMEngine.analyze_sentiment = _analyze_sentiment
+OllamaLLMEngine._validate_sentiment = _validate_sentiment
+OllamaLLMEngine._fallback_sentiment = _fallback_sentiment
+OllamaLLMEngine.generate_digest_narrative = _generate_digest_narrative

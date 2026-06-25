@@ -77,3 +77,39 @@ participants:
   - "Dharmika Nalla"
   - "Nirdesh Kumar"
   - "Senthilkumar Krishnaswamy"
+
+# ============================================================
+# Feature 8 — Sentiment & Morale Signal Detection
+# A second LLM pass that analyses tone per-person and sends a
+# CONFIDENTIAL morale report to the manager only.
+# Team email and Teams card are NOT affected.
+# ============================================================
+sentiment:
+  enabled: false
+  manager_email: ""   # Set SENTIMENT_MANAGER_EMAIL env var
+
+# ============================================================
+# Feature 9 — Draft Approval Gate
+# After MOM generation, sends a draft to the organizer first.
+# Delivery to the team is held until approved (or auto-approved
+# on timeout). Callback server binds to 127.0.0.1 only.
+# ============================================================
+approval:
+  enabled: false
+  organizer_email: ""  # Set APPROVAL_ORGANIZER_EMAIL env var
+  callback_port: 8765
+  timeout_minutes: 30
+  auto_approve: true   # true = auto-approve on timeout; false = auto-reject
+
+# ============================================================
+# Feature 10 — Personal Weekly Productivity Digest
+# Run with: python src/main.py --weekly-digest
+# Each person receives their own private email with their
+# individual week summary (only their data, never the team's).
+# ============================================================
+digest:
+  enabled: false
+  days_back: 7
+  participant_emails: {}
+    # Uncomment and fill in one entry per person:
+    # "Full Name": "email@yourcompany.com"
