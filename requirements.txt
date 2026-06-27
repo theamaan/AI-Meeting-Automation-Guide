@@ -19,7 +19,9 @@ MarkupSafe==2.1.5
 PyYAML==6.0.1
 
 # --- Database ---
-# sqlite3 is built-in to Python — no extra install needed
+# pyodbc: SQL Server connectivity via ODBC Driver 17/18 for SQL Server
+# Install ODBC driver on Windows: https://aka.ms/downloadmsodbcsql
+pyodbc>=4.0.39
 
 # --- Utilities ---
 python-dotenv==1.0.1

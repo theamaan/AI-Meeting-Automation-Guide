@@ -48,8 +48,25 @@ email:
     - "dev-team@yourcompany.com"
     # Add all team members who should receive the MOM email
 
-# Storage
-db_path: "data/meetings.db"
+# ============================================================
+# Database — SQL Server (migrated from SQLite)
+# Override any value via environment variables (see .env.example).
+# Credentials must NEVER be placed here; use DB_USERNAME / DB_PASSWORD env vars.
+# ============================================================
+database:
+  # SQL Server instance name shown in SSMS "Connect to Server" dialog
+  server: "ICS-LT-H3J9R73\\SQLEXPRESS"
+  # Target database (created by scripts/create_sqlserver_schema.sql)
+  database: "MeetingSystem"
+  # ODBC driver installed on this machine — check ODBC Data Sources (64-bit)
+  # Common values: "ODBC Driver 17 for SQL Server" | "ODBC Driver 18 for SQL Server"
+  driver: "ODBC Driver 17 for SQL Server"
+  # true  = Windows Authentication (current Windows user; no username/password needed)
+  # false = SQL Authentication (set DB_USERNAME and DB_PASSWORD env vars)
+  trusted_connection: true
+  username: ""   # Leave blank for Windows auth — set DB_USERNAME env var for SQL auth
+  password: ""   # Leave blank for Windows auth — set DB_PASSWORD env var for SQL auth
+  connection_timeout: 30
 
 # Logging
 log_level: "INFO"   # DEBUG | INFO | WARNING | ERROR

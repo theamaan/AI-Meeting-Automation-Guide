@@ -88,6 +88,33 @@ class DigestConfig:
 
 
 @dataclass
+class DatabaseConfig:
+    """SQL Server connection settings."""
+    server: str = r"ICS-LT-H3J9R73\SQLEXPRESS"    # from SSMS server name
+    database: str = "MeetingSystem"
+    driver: str = "ODBC Driver 17 for SQL Server"   # or 'ODBC Driver 18 for SQL Server'
+    trusted_connection: bool = True                 # Windows Authentication (default)
+    username: str = ""                              # SQL auth only; set DB_USERNAME env var
+    password: str = ""                              # SQL auth only; set DB_PASSWORD env var
+    connection_timeout: int = 30
+
+    def build_connection_string(self) -> str:
+        """Build a pyodbc-compatible connection string from this config."""
+        parts = [
+            f"Driver={{{self.driver}}}",
+            f"Server={self.server}",
+            f"Database={self.database}",
+            f"Connection Timeout={self.connection_timeout}",
+            "ApplicationIntent=ReadWrite",
+        ]
+        if self.trusted_connection:
+            parts.append("Trusted_Connection=yes")
+        else:
+            parts.extend([f"UID={self.username}", f"PWD={self.password}"])
+        return ";".join(parts) + ";"
+
+
+@dataclass
 class AppConfig:
     watcher: WatcherConfig = field(default_factory=WatcherConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
@@ -96,8 +123,8 @@ class AppConfig:
     sentiment: SentimentConfig = field(default_factory=SentimentConfig)
     approval: ApprovalConfig = field(default_factory=ApprovalConfig)
     digest: DigestConfig = field(default_factory=DigestConfig)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
     expected_participants: List[str] = field(default_factory=list)
-    db_path: str = "data/meetings.db"
     log_level: str = "INFO"
     log_file: str = "logs/meeting_system.log"
 
@@ -185,7 +212,15 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
         config.digest.days_back          = int(d.get("days_back", 7))
         config.digest.participant_emails = dict(d.get("participant_emails", {}) or {})
 
-        config.db_path                 = data.get("db_path", config.db_path)
+        db = data.get("database", {})
+        config.database.server             = db.get("server",             config.database.server)
+        config.database.database           = db.get("database",           config.database.database)
+        config.database.driver             = db.get("driver",             config.database.driver)
+        config.database.trusted_connection = bool(db.get("trusted_connection", True))
+        config.database.username           = db.get("username",           "")
+        config.database.password           = db.get("password",           "")
+        config.database.connection_timeout = int(db.get("connection_timeout", 30))
+
         config.log_level               = data.get("log_level", config.log_level)
         config.log_file                = data.get("log_file", config.log_file)
         config.expected_participants   = data.get("participants", config.expected_participants)
@@ -200,6 +235,16 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
     config.ollama.base_url           = os.getenv("OLLAMA_BASE_URL",            config.ollama.base_url)
     config.sentiment.manager_email   = os.getenv("SENTIMENT_MANAGER_EMAIL",   config.sentiment.manager_email)
     config.approval.organizer_email  = os.getenv("APPROVAL_ORGANIZER_EMAIL",  config.approval.organizer_email)
+
+    # SQL Server overrides — set these env vars to avoid putting credentials in YAML
+    config.database.server   = os.getenv("DB_SERVER",   config.database.server)
+    config.database.database = os.getenv("DB_NAME",     config.database.database)
+    config.database.driver   = os.getenv("DB_DRIVER",   config.database.driver)
+    config.database.username = os.getenv("DB_USERNAME",  config.database.username)
+    config.database.password = os.getenv("DB_PASSWORD",  config.database.password)
+    _trusted = os.getenv("DB_TRUSTED_CONNECTION")
+    if _trusted is not None:
+        config.database.trusted_connection = _trusted.lower() in ("1", "true", "yes")
 
     return config
 

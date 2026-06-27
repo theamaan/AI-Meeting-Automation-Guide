@@ -70,7 +70,10 @@ class MeetingIntelligenceSystem:
         self.logger = logging.getLogger("MeetingSystem")
 
         # Core components
-        self.db     = Database(self.config.db_path)
+        self.db     = Database(
+            self.config.database.build_connection_string(),
+            self.config.database.connection_timeout,
+        )
         self.parser = TranscriptParser()
         self.llm    = OllamaLLMEngine(
             model                = self.config.ollama.model,
