@@ -201,7 +201,9 @@ class Database:
         """
         with self._conn() as conn:
             cursor = conn.execute(
-                "SELECT id, file_hash FROM dbo.meetings WHERE file_path = ?",
+                # UPDLOCK+HOLDLOCK: prevent two concurrent processes from both seeing
+                # "no row" and both inserting — makes the SELECT→INSERT atomic.
+                "SELECT id, file_hash FROM dbo.meetings WITH (UPDLOCK, HOLDLOCK) WHERE file_path = ?",
                 (file_path,),
             )
             existing = cursor.fetchone()

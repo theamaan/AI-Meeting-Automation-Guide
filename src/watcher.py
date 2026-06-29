@@ -14,7 +14,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from threading import Timer
+from threading import Lock, Timer
 from typing import Callable
 
 from watchdog.events import FileSystemEventHandler
@@ -43,6 +43,8 @@ class RecordingEventHandler(FileSystemEventHandler):
         self.delay_seconds = delay_seconds
         self.db = db
         self._pending: dict[str, Timer] = {}
+        self._lock = Lock()                # guards _pending and _in_flight
+        self._in_flight: set[str] = set() # files whose processing is currently running
 
     # ── Watchdog callbacks ────────────────────────────────────
 
@@ -113,50 +115,69 @@ class RecordingEventHandler(FileSystemEventHandler):
         logger.debug("Attendance CSV detected but no matching recording found: %s", Path(csv_path).name)
 
     def _schedule(self, file_path: str):
-        # Cancel any existing pending timer for this file
-        if file_path in self._pending:
-            self._pending[file_path].cancel()
-            logger.debug(f"Timer reset for: {Path(file_path).name}")
+        with self._lock:
+            # Cancel any existing pending timer for this file
+            if file_path in self._pending:
+                self._pending[file_path].cancel()
+                logger.debug(f"Timer reset for: {Path(file_path).name}")
 
-        # Compute content hash — same filename but different bytes = new meeting
-        file_hash = None
-        try:
-            with open(file_path, "rb") as fh:
-                file_hash = hashlib.md5(fh.read()).hexdigest()
-        except OSError:
-            pass  # File may still be mid-sync; proceed without hash
+            # Compute content hash — same filename but different bytes = new meeting
+            file_hash = None
+            try:
+                with open(file_path, "rb") as fh:
+                    file_hash = hashlib.md5(fh.read()).hexdigest()
+            except OSError:
+                pass  # File may still be mid-sync; proceed without hash
 
-        # Skip already-processed files (path + hash must both match)
-        if self.db.is_processed(file_path, file_hash):
-            logger.info(f"Already processed (same content), skipping: {Path(file_path).name}")
-            return
+            # Skip already-processed files (path + hash must both match)
+            if self.db.is_processed(file_path, file_hash):
+                logger.info(f"Already processed (same content), skipping: {Path(file_path).name}")
+                return
 
-        logger.info(
-            f"New file detected: {Path(file_path).name} — "
-            f"processing in {self.delay_seconds}s"
-        )
-        timer = Timer(self.delay_seconds, self._fire, args=[file_path])
-        timer.daemon = True
-        self._pending[file_path] = timer
-        timer.start()
+            # Skip if a processing run for this path is already in flight
+            if file_path in self._in_flight:
+                logger.debug(f"Processing already in progress, skipping: {Path(file_path).name}")
+                return
+
+            logger.info(
+                f"New file detected: {Path(file_path).name} — "
+                f"processing in {self.delay_seconds}s"
+            )
+            timer = Timer(self.delay_seconds, self._fire, args=[file_path])
+            timer.daemon = True
+            self._pending[file_path] = timer
+            timer.start()
 
     def _fire(self, file_path: str):
         """Called after delay — validate file still exists then dispatch."""
-        self._pending.pop(file_path, None)
+        with self._lock:
+            self._pending.pop(file_path, None)
+            if file_path in self._in_flight:
+                # A duplicate timer slipped through the race window — suppress it
+                logger.warning("Duplicate dispatch suppressed: %s", Path(file_path).name)
+                return
+            self._in_flight.add(file_path)
+
         if not os.path.exists(file_path):
             logger.warning(f"File disappeared before processing: {file_path}")
+            with self._lock:
+                self._in_flight.discard(file_path)
             return
         try:
             logger.info(f"Dispatching processing: {Path(file_path).name}")
             self.callback(file_path)
         except Exception as exc:
             logger.error(f"Error in callback for {file_path}: {exc}", exc_info=True)
+        finally:
+            with self._lock:
+                self._in_flight.discard(file_path)
 
     def cancel_all(self):
         """Clean shutdown — cancel all pending timers."""
-        for timer in self._pending.values():
-            timer.cancel()
-        self._pending.clear()
+        with self._lock:
+            for timer in self._pending.values():
+                timer.cancel()
+            self._pending.clear()
 
 
 # ──────────────────────────────────────────────────────────────

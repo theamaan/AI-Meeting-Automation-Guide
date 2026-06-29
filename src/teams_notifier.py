@@ -66,19 +66,18 @@ class TeamsNotifier:
         title = compact_mom.get("meeting_title", "Daily Standup Report")
         n_parts = len(chunks)
 
-        # ── Phase 1: Build & validate ALL parts before sending any ────────────────
-        # If any part cannot be made to fit — even after emergency stripping — abort
-        # everything. This prevents the worst-case scenario where Part 1 is rejected
-        # by Power Automate (after it already returned HTTP 202) while Parts 2..N
-        # were already accepted and posted in chat out of context.
+        # ── Phase 1: Build & validate ALL participant cards ──────────────────────
+        # Team Summary and Key Decisions are withheld from every participant card —
+        # they appear once in the dedicated summary card sent after all updates.
+        # Validate every card before sending any: prevents partial delivery where
+        # Part 1 is rejected by Power Automate while Parts 2..N were already posted.
         validated_parts: List[tuple] = []
         for idx, chunk in enumerate(chunks, start=1):
             part_mom = deepcopy(compact_mom)
             part_mom["participants"] = chunk
-            if n_parts > 1:
-                part_mom["meeting_title"] = f"{title} (Part {idx}/{n_parts})"
-                if idx > 1:
-                    part_mom["key_decisions"] = []
+            part_mom["meeting_title"] = f"{title} (Part {idx}/{n_parts})"
+            part_mom["team_summary"] = ""    # held for summary card
+            part_mom["key_decisions"] = []   # held for summary card
 
             part_payload = self._build_payload(part_mom, attendance=attendance)
             part_size = self._payload_size(part_payload)
@@ -95,35 +94,59 @@ class TeamsNotifier:
             if part_size > self.MAX_TEAMS_PAYLOAD_BYTES:
                 logger.error(
                     "Card part %d/%d is still %d bytes after emergency strip (hard limit %d). "
-                    "Aborting ALL %d parts — nothing will be sent to prevent partial delivery.",
-                    idx, n_parts, part_size, self.MAX_TEAMS_PAYLOAD_BYTES, n_parts,
+                    "Aborting ALL cards to prevent partial delivery.",
+                    idx, n_parts, part_size, self.MAX_TEAMS_PAYLOAD_BYTES,
                 )
                 return False
 
-            validated_parts.append((idx, n_parts, len(chunk), part_payload, part_size))
+            validated_parts.append((f"Part {idx}/{n_parts}", len(chunk), part_payload, part_size))
             logger.info(
                 "Pre-validated Teams card part %d/%d (%d participants, %d bytes) — OK.",
                 idx, n_parts, len(chunk), part_size,
             )
 
-        # ── Phase 2: All parts validated — send in strict order, stop on first failure ──
+        # ── Build & validate the final summary card ───────────────────────────
+        # Consolidates the entire meeting: 🏢 Team Summary + 🔑 Key Decisions.
+        # No individual participant data — that was already sent in the cards above.
+        summary_mom = deepcopy(compact_mom)
+        summary_mom["participants"] = []
+        summary_mom["meeting_title"] = f"{title} — Meeting Summary"
+        summary_payload = self._build_payload(summary_mom, attendance=None)
+        summary_size = self._payload_size(summary_payload)
+
+        if summary_size > self.MAX_TEAMS_PAYLOAD_BYTES:
+            logger.warning(
+                "Summary card is %d bytes — truncating team_summary to fit.", summary_size
+            )
+            summary_mom["team_summary"] = summary_mom["team_summary"][:300] + "…"
+            summary_payload = self._build_payload(summary_mom, attendance=None)
+            summary_size = self._payload_size(summary_payload)
+
+        validated_parts.append(("Summary", 0, summary_payload, summary_size))
+        logger.info("Pre-validated Teams summary card (%d bytes) — OK.", summary_size)
+
+        # ── Phase 2: All cards validated — send in strict order ───────────────
         # Power Automate webhooks return HTTP 202 (accepted) immediately and post
         # asynchronously. If a POST itself fails (4xx/5xx/timeout), stop immediately
-        # so we never deliver later parts without the earlier ones.
-        for idx, n_parts, n_people, part_payload, part_size in validated_parts:
-            logger.info(
-                "Sending Teams card part %d/%d (%d participants, %d bytes).",
-                idx, n_parts, n_people, part_size,
-            )
+        # so we never deliver later cards without the earlier ones.
+        total = len(validated_parts)
+        for send_idx, (label, n_people, part_payload, part_size) in enumerate(validated_parts, start=1):
+            if n_people > 0:
+                logger.info(
+                    "Sending Teams card %s (%d participants, %d bytes).",
+                    label, n_people, part_size,
+                )
+            else:
+                logger.info("Sending Teams %s card (%d bytes).", label, part_size)
             if not self._post(part_payload):
-                remaining = n_parts - idx
+                remaining = total - send_idx
                 if remaining > 0:
                     logger.error(
-                        "Part %d/%d failed — aborting remaining %d part(s) to prevent partial delivery.",
-                        idx, n_parts, remaining,
+                        "Card %s failed — aborting remaining %d card(s) to prevent partial delivery.",
+                        label, remaining,
                     )
                 return False
-            if idx < n_parts:
+            if send_idx < total:
                 time.sleep(self.PART_POST_DELAY_SECONDS)
 
         return True
@@ -142,6 +165,8 @@ class TeamsNotifier:
             candidate = current_chunk + [person]
             candidate_mom = deepcopy(mom)
             candidate_mom["participants"] = candidate
+            candidate_mom["team_summary"] = ""    # participant cards don't include summary
+            candidate_mom["key_decisions"] = []   # participant cards don't include decisions
             candidate_payload = self._build_payload(candidate_mom, attendance=attendance)
             candidate_size = self._payload_size(candidate_payload)
 
@@ -236,7 +261,12 @@ class TeamsNotifier:
 
         if blocker_count:
             stats_parts.append(f"{blocker_count} 🔴 blocker{'s' if blocker_count != 1 else ''}")
-        stats_text = "  •  ".join(stats_parts) if stats_parts else f"{total} participants"
+        if not participants:
+            stats_text = "Meeting Summary"
+        elif stats_parts:
+            stats_text = "  •  ".join(stats_parts)
+        else:
+            stats_text = f"{total} participants"
 
         # Pre-compute all panel IDs for accordion targeting
         all_pids = [self._safe_id(p.get("name", "")) for p in participants]
@@ -316,39 +346,41 @@ class TeamsNotifier:
             })
 
         # ── Team summary ──────────────────────────────────────
-        body.append({
-            "type": "Container",
-            "spacing": "Medium",
-            "separator": True,
-            "items": [
-                {
-                    "type": "TextBlock",
-                    "text": "🏢  Team Summary",
-                    "weight": "Bolder",
-                    "size": "Medium",
-                    "spacing": "None"
-                },
-                {
-                    "type": "TextBlock",
-                    "text": team_summary,
-                    "wrap": True,
-                    "isSubtle": True,
-                    "size": "Small",
-                    "spacing": "Small"
-                }
-            ]
-        })
+        if team_summary:
+            body.append({
+                "type": "Container",
+                "spacing": "Medium",
+                "separator": True,
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": "🏢  Team Summary",
+                        "weight": "Bolder",
+                        "size": "Medium",
+                        "spacing": "None"
+                    },
+                    {
+                        "type": "TextBlock",
+                        "text": team_summary,
+                        "wrap": True,
+                        "isSubtle": True,
+                        "size": "Small",
+                        "spacing": "Small"
+                    }
+                ]
+            })
 
         # ── Member selector header ────────────────────────────
-        body.append({
-            "type": "TextBlock",
-            "text": "👥  TEAM MEMBERS  —  tap a name to expand",
-            "weight": "Bolder",
-            "size": "Small",
-            "isSubtle": True,
-            "spacing": "Medium",
-            "separator": True
-        })
+        if participants:
+            body.append({
+                "type": "TextBlock",
+                "text": "👥  TEAM MEMBERS  —  tap a name to expand",
+                "weight": "Bolder",
+                "size": "Small",
+                "isSubtle": True,
+                "spacing": "Medium",
+                "separator": True
+            })
 
         # ── Person buttons ────────────────────────────────────
         # Accordion technique: each button's Action.ToggleVisibility uses
@@ -578,18 +610,20 @@ class TeamsNotifier:
             for pid in all_pids
         ]
 
+        card_actions = []
+        if all_pids:
+            card_actions.append({
+                "type": "Action.ToggleVisibility",
+                "title": "✕  Close All",
+                "targetElements": close_all_targets
+            })
+
         adaptive_card = {
             "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
             "type": "AdaptiveCard",
             "version": "1.4",
             "body": body,
-            "actions": [
-                {
-                    "type": "Action.ToggleVisibility",
-                    "title": "✕  Close All",
-                    "targetElements": close_all_targets
-                }
-            ],
+            "actions": card_actions,
             "msteams": {
                 "width": "Full"
             }

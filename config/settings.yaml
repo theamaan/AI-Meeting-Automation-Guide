@@ -8,10 +8,10 @@
 
 watcher:
   # Absolute path to your OneDrive-synced recordings folder
-  watch_path: "C:/Users/YourName/OneDrive - YourCompany/Recordings"
+  watch_path: "D:/Watch Files - For Meetings"
   # Wait this many seconds after a file appears before processing
   # (ensures OneDrive sync is fully complete)
-  delay_seconds: 300
+  delay_seconds: 10
 
 ollama:
   # Cloud Ollama model — high-accuracy structured extraction for meeting transcripts

@@ -151,6 +151,11 @@ OUTPUT — return ONLY this JSON, nothing else:
 Return ONLY the JSON object. Begin with {{ and end with }}."""
 
 
+# Maximum participants to process in one LLM pass.
+# Meetings with more participants are split into groups so the output JSON
+# stays within the num_predict token cap (13 000 tokens × 10 proxy = 130 000 max_tokens).
+_MAX_PARTICIPANTS_PER_CHUNK = 10
+
 # ──────────────────────────────────────────────────────────────
 # Engine
 # ──────────────────────────────────────────────────────────────
@@ -212,11 +217,20 @@ class OllamaLLMEngine:
     ) -> Dict:
         """
         Call LLM to extract structured MOM from transcript.
-        If the transcript exceeds max_transcript_chars it is split into
-        overlapping chunks and processed via _generate_mom_chunked so that
-        NO content is ever discarded.
+        Large participant lists (> _MAX_PARTICIPANTS_PER_CHUNK) are routed through
+        _generate_mom_participant_chunked to keep each LLM response within the
+        num_predict token cap.  Large transcripts are routed through
+        _generate_mom_chunked so no content is ever discarded.
         """
-        # Route long transcripts through chunked map-reduce — no content lost
+        # Route large participant lists through participant-level chunking —
+        # each group gets the full transcript but only outputs its participants,
+        # keeping response tokens well under the num_predict cap.
+        if len(participants) > _MAX_PARTICIPANTS_PER_CHUNK:
+            return self._generate_mom_participant_chunked(
+                transcript_text, participants, meeting_date, meeting_title, attendance
+            )
+
+        # Route long transcripts through transcript-level chunking — no content lost
         if len(transcript_text) > self.max_transcript_chars:
             return self._generate_mom_chunked(
                 transcript_text, participants, meeting_date, meeting_title, attendance
@@ -490,6 +504,128 @@ class OllamaLLMEngine:
 
         merged["participants"] = list(by_name.values())
         return merged
+
+    # ── Participant-level chunked processing ──────────────────
+
+    def _generate_mom_participant_chunked(
+        self,
+        transcript_text: str,
+        participants: List[str],
+        meeting_date: str,
+        meeting_title: str,
+        attendance: Optional[Dict],
+    ) -> Dict:
+        """
+        Process a meeting with many participants by splitting them into groups
+        of _MAX_PARTICIPANTS_PER_CHUNK.  Each group receives the same full
+        transcript but only outputs data for its participants, keeping each
+        LLM response within the num_predict token cap.
+        """
+        groups = [
+            participants[i : i + _MAX_PARTICIPANTS_PER_CHUNK]
+            for i in range(0, len(participants), _MAX_PARTICIPANTS_PER_CHUNK)
+        ]
+        n = len(groups)
+        logger.info(
+            "Meeting has %d participants — splitting into %d group(s) of up to %d each.",
+            len(participants), n, _MAX_PARTICIPANTS_PER_CHUNK,
+        )
+
+        effective_predict = min(self.num_predict, self.max_output_tokens)
+        truncated = self._truncate_transcript(transcript_text, self.max_transcript_chars)
+        partial_moms: List[Dict] = []
+        failed_groups: List[int] = []
+
+        for i, group in enumerate(groups):
+            logger.info(
+                "[LLM REQUEST] Participant group %d/%d | model=%s | participants=%s | "
+                "transcript=%d chars | num_predict=%d | temperature=%.2f",
+                i + 1, n, self.model, ", ".join(group),
+                len(transcript_text), effective_predict, self.temperature,
+            )
+            group_attendance = self._filter_attendance_for_group(attendance, group)
+            prompt = MOM_PROMPT_TEMPLATE.format(
+                transcript=truncated,
+                participants=", ".join(group),
+                meeting_date=meeting_date or "Not specified",
+                meeting_title=meeting_title or "Team Meeting",
+                attendance_context=self._format_attendance_context(group_attendance),
+            )
+
+            group_result: Optional[Dict] = None
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    raw = self._call_ollama(prompt, num_predict_override=effective_predict)
+                    parsed = self._extract_json(raw)
+                    group_result = self._validate_and_repair(
+                        parsed, group, meeting_title, meeting_date
+                    )
+                    logger.info("Group %d/%d succeeded on attempt %d.", i + 1, n, attempt)
+                    break
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        "Group %d/%d JSON error attempt %d: %s", i + 1, n, attempt, exc
+                    )
+                except requests.exceptions.Timeout:
+                    logger.warning("Group %d/%d timeout attempt %d.", i + 1, n, attempt)
+                except Exception as exc:
+                    logger.error(
+                        "Group %d/%d error attempt %d: %s", i + 1, n, attempt, exc
+                    )
+                if attempt < self.max_retries:
+                    time.sleep(5 * attempt)
+
+            if group_result is None:
+                logger.error(
+                    "Group %d/%d failed all %d retries — participants %s missing from MOM.",
+                    i + 1, n, self.max_retries, group,
+                )
+                failed_groups.append(i + 1)
+            else:
+                partial_moms.append(group_result)
+
+        if not partial_moms:
+            raise LLMGenerationError(
+                f"All {n} participant group(s) failed extraction after "
+                f"{self.max_retries} retries each."
+            )
+
+        merged = self._merge_chunk_moms(partial_moms, meeting_date, meeting_title)
+
+        if failed_groups:
+            note = (
+                f"WARNING: Participant group(s) {failed_groups} of {n} failed LLM extraction "
+                "and are missing from this MOM. Review the transcript manually."
+            )
+            existing_reason = merged.get("status_reason", "").strip()
+            merged["status_reason"] = (existing_reason + " | " + note) if existing_reason else note
+            merged["overall_status"] = "HAS_ISSUES"
+            logger.warning(note)
+
+        logger.info(
+            "Participant-chunked extraction complete: %d/%d group(s) succeeded | "
+            "%d participants | %d action items | %d discussion points",
+            len(partial_moms), n,
+            len(merged.get("participants", [])),
+            sum(len(p.get("action_items", [])) for p in merged.get("participants", [])),
+            len(merged.get("discussion_points", [])),
+        )
+        return merged
+
+    def _filter_attendance_for_group(
+        self, attendance: Optional[Dict], group: List[str]
+    ) -> Optional[Dict]:
+        """Return an attendance dict containing only members present in group."""
+        if not attendance:
+            return attendance
+        group_lower = {name.lower() for name in group}
+        filtered: Dict = {}
+        for key, value in attendance.items():
+            if isinstance(value, list):
+                filtered[key] = [name for name in value if name.lower() in group_lower]
+            else:
+                filtered[key] = value
+        return filtered
 
     # ── Ollama API ────────────────────────────────────────────
 
