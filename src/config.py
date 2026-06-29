@@ -41,7 +41,8 @@ class OllamaConfig:
     max_retries: int = 3
     timeout: int = 450
     max_transcript_chars: int = 140000
-    num_predict: int = 20000  # Cloud proxy maps to max_tokens — must be positive (-1 is rejected by cloud models)
+    num_predict: int = 13000       # Sent to Ollama as num_predict in options
+    max_output_tokens: int = 131072  # Hard ceiling — clamp num_predict to this before every request
 
 
 @dataclass
@@ -180,7 +181,8 @@ def load_config(config_path: str = "config/settings.yaml") -> AppConfig:
         config.ollama.max_transcript_chars = int(
             o.get("max_transcript_chars", config.ollama.max_transcript_chars)
         )
-        config.ollama.num_predict      = int(o.get("num_predict", config.ollama.num_predict))
+        config.ollama.num_predict      = int(o.get("num_predict",      config.ollama.num_predict))
+        config.ollama.max_output_tokens = int(o.get("max_output_tokens", config.ollama.max_output_tokens))
 
         t = data.get("teams", {})
         config.teams.webhook_url       = t.get("webhook_url", "")

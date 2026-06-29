@@ -23,6 +23,10 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+class LLMGenerationError(RuntimeError):
+    """Raised when all LLM retry attempts are exhausted and no MOM could be generated.
+    Propagating this exception stops the pipeline before Teams or email are sent."""
+
 # ──────────────────────────────────────────────────────────────
 # Prompts
 # ──────────────────────────────────────────────────────────────
@@ -161,7 +165,8 @@ class OllamaLLMEngine:
         max_retries: int = 3,
         timeout: int = 450,
         max_transcript_chars: int = 140000,
-        num_predict: int = 20000,  # Cloud proxy maps to max_tokens — must be positive (-1 is rejected by cloud models)
+        num_predict: int = 13000,
+        max_output_tokens: int = 131072,  # Hard ceiling — clamp num_predict to this before every request
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -171,6 +176,7 @@ class OllamaLLMEngine:
         self.timeout = timeout
         self.max_transcript_chars = max_transcript_chars
         self.num_predict = num_predict
+        self.max_output_tokens = max_output_tokens
 
     # ── Public ────────────────────────────────────────────────
 
@@ -206,21 +212,50 @@ class OllamaLLMEngine:
     ) -> Dict:
         """
         Call LLM to extract structured MOM from transcript.
-        Returns validated dict or a safe fallback on failure.
+        If the transcript exceeds max_transcript_chars it is split into
+        overlapping chunks and processed via _generate_mom_chunked so that
+        NO content is ever discarded.
         """
+        # Route long transcripts through chunked map-reduce — no content lost
+        if len(transcript_text) > self.max_transcript_chars:
+            return self._generate_mom_chunked(
+                transcript_text, participants, meeting_date, meeting_title, attendance
+            )
+
         attendance_context = self._format_attendance_context(attendance)
+        truncated_transcript = self._truncate_transcript(transcript_text, self.max_transcript_chars)
         prompt = MOM_PROMPT_TEMPLATE.format(
-            transcript=self._truncate_transcript(transcript_text, self.max_transcript_chars),
+            transcript=truncated_transcript,
             participants=", ".join(participants) if participants else "Not identified",
             meeting_date=meeting_date or "Not specified",
             meeting_title=meeting_title or "Team Meeting",
             attendance_context=attendance_context,
         )
 
+        # ── Pre-request diagnostics ───────────────────────────
+        effective_predict = min(self.num_predict, self.max_output_tokens)
+        if effective_predict != self.num_predict:
+            logger.warning(
+                "[LLM] num_predict (%d) exceeds max_output_tokens ceiling (%d) — "
+                "clamped to %d. Adjust 'num_predict' in settings.yaml.",
+                self.num_predict, self.max_output_tokens, effective_predict,
+            )
+        logger.info(
+            "[LLM REQUEST] model=%s | transcript=%d chars | prompt=%d chars | "
+            "num_predict=%d | max_output_tokens=%d | effective_num_predict=%d | temperature=%.2f",
+            self.model,
+            len(transcript_text),
+            len(prompt),
+            self.num_predict,
+            self.max_output_tokens,
+            effective_predict,
+            self.temperature,
+        )
+
         for attempt in range(1, self.max_retries + 1):
             logger.info("LLM attempt %d/%d", attempt, self.max_retries)
             try:
-                raw = self._call_ollama(prompt)
+                raw = self._call_ollama(prompt, num_predict_override=effective_predict)
                 logger.debug("Raw LLM output (first 500 chars): %s", raw[:500])
                 parsed = self._extract_json(raw)
                 validated = self._validate_and_repair(parsed, participants, meeting_title, meeting_date)
@@ -242,12 +277,224 @@ class OllamaLLMEngine:
                 logger.info("Retrying in %ds...", wait)
                 time.sleep(wait)
 
-        logger.error("All LLM attempts failed. Using fallback MOM.")
-        return self._fallback_mom(participants, meeting_date, meeting_title)
+        logger.error("All LLM attempts failed — pipeline will be halted.")
+        raise LLMGenerationError(
+            f"All {self.max_retries} LLM attempt(s) failed — "
+            "Teams and email delivery halted. "
+            "Check the 'num_predict' setting and Ollama server logs."
+        )
+
+    # ── Long-transcript chunked processing ────────────────────
+
+    def _generate_mom_chunked(
+        self,
+        transcript_text: str,
+        participants: List[str],
+        meeting_date: str,
+        meeting_title: str,
+        attendance: Optional[Dict],
+    ) -> Dict:
+        """
+        Process a transcript that is too large for a single LLM pass.
+        Splits into overlapping chunks, extracts a partial MOM from each,
+        then merges them into one complete MOM.  No transcript content is
+        discarded.
+        """
+        chunks = self._split_into_chunks(transcript_text)
+        n = len(chunks)
+        logger.info(
+            "Transcript (%d chars) exceeds single-pass limit (%d chars). "
+            "Processing %d overlapping segments — no content will be discarded.",
+            len(transcript_text), self.max_transcript_chars, n,
+        )
+
+        attendance_context = self._format_attendance_context(attendance)
+        effective_predict = min(self.num_predict, self.max_output_tokens)
+        partial_moms: List[Dict] = []
+        failed_chunks: List[int] = []
+        overlap = 3000
+
+        for i, chunk in enumerate(chunks):
+            chunk_start = i * (self.max_transcript_chars - overlap)
+            logger.info(
+                "Chunk %d/%d: %d chars (transcript offset ~%d)",
+                i + 1, n, len(chunk), chunk_start,
+            )
+
+            annotated = (
+                f"[SEGMENT {i + 1} OF {n} — extract all items from this segment only]\n\n"
+                + chunk
+            )
+            prompt = MOM_PROMPT_TEMPLATE.format(
+                transcript=annotated,
+                participants=", ".join(participants) if participants else "Not identified",
+                meeting_date=meeting_date or "Not specified",
+                meeting_title=meeting_title or "Team Meeting",
+                attendance_context=attendance_context,
+            )
+
+            chunk_result: Optional[Dict] = None
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    raw = self._call_ollama(prompt, num_predict_override=effective_predict)
+                    parsed = self._extract_json(raw)
+                    chunk_result = self._validate_and_repair(
+                        parsed, participants, meeting_title, meeting_date
+                    )
+                    logger.info("Chunk %d/%d succeeded on attempt %d.", i + 1, n, attempt)
+                    break
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        "Chunk %d/%d JSON error attempt %d: %s", i + 1, n, attempt, exc
+                    )
+                except requests.exceptions.Timeout:
+                    logger.warning("Chunk %d/%d timeout attempt %d.", i + 1, n, attempt)
+                except Exception as exc:
+                    logger.error(
+                        "Chunk %d/%d error attempt %d: %s", i + 1, n, attempt, exc
+                    )
+                if attempt < self.max_retries:
+                    time.sleep(5 * attempt)
+
+            if chunk_result is None:
+                logger.error(
+                    "Chunk %d/%d failed all %d retries — "
+                    "this segment will be missing from the MOM.",
+                    i + 1, n, self.max_retries,
+                )
+                failed_chunks.append(i + 1)
+            else:
+                partial_moms.append(chunk_result)
+
+        if not partial_moms:
+            raise LLMGenerationError(
+                f"All {n} transcript chunks failed extraction after "
+                f"{self.max_retries} retries each."
+            )
+
+        merged = self._merge_chunk_moms(partial_moms, meeting_date, meeting_title)
+
+        if failed_chunks:
+            note = (
+                f"WARNING: Segment(s) {failed_chunks} of {n} failed LLM extraction "
+                "and are missing from this MOM. Review the transcript manually."
+            )
+            existing_reason = merged.get("status_reason", "").strip()
+            merged["status_reason"] = (existing_reason + " | " + note) if existing_reason else note
+            merged["overall_status"] = "HAS_ISSUES"
+            logger.warning(note)
+
+        logger.info(
+            "Chunked extraction complete: %d/%d chunks succeeded | "
+            "%d participants | %d action items | %d discussion points",
+            len(partial_moms), n,
+            len(merged.get("participants", [])),
+            sum(len(p.get("action_items", [])) for p in merged.get("participants", [])),
+            len(merged.get("discussion_points", [])),
+        )
+        return merged
+
+    def _split_into_chunks(self, text: str, overlap: int = 3000) -> List[str]:
+        """
+        Split text into chunks of at most max_transcript_chars with
+        'overlap' characters of shared content between adjacent chunks.
+        The overlap prevents content that spans a boundary from being missed.
+        """
+        step = self.max_transcript_chars - overlap
+        chunks: List[str] = []
+        start = 0
+        while start < len(text):
+            chunks.append(text[start : start + self.max_transcript_chars])
+            if start + self.max_transcript_chars >= len(text):
+                break
+            start += step
+        return chunks
+
+    def _merge_chunk_moms(
+        self,
+        partials: List[Dict],
+        meeting_date: str,
+        meeting_title: str,
+    ) -> Dict:
+        """
+        Merge partial MOMs from transcript chunks into one complete MOM.
+          - Scalar metadata : worst-case overall_status; first-chunk title/date
+          - List fields     : union with case-insensitive deduplication
+          - Participants    : merged by name; each per-person list is unioned
+          - team_summary    : concatenated (each chunk covers different content)
+          - follow_up_date  : last non-null across chunks
+        """
+        if len(partials) == 1:
+            return partials[0]
+
+        priority = {"MEETING_CANCELLED": 2, "HAS_ISSUES": 1, "ALL_CLEAR": 0}
+
+        merged: Dict = {
+            "meeting_title": meeting_title or partials[0].get("meeting_title", "Team Meeting"),
+            "meeting_date": meeting_date or partials[0].get("meeting_date", ""),
+            "overall_status": max(
+                (p.get("overall_status", "ALL_CLEAR") for p in partials),
+                key=lambda s: priority.get(s, 0),
+            ),
+            "status_reason": " | ".join(
+                r for p in partials if (r := p.get("status_reason", "").strip())
+            ),
+            "team_summary": " ".join(
+                s for p in partials if (s := p.get("team_summary", "").strip())
+            ),
+            "discussion_points": [],
+            "key_decisions": [],
+            "follow_up_date": next(
+                (p["follow_up_date"] for p in reversed(partials) if p.get("follow_up_date")),
+                None,
+            ),
+            "participants": [],
+        }
+
+        # Union list fields with deduplication
+        for field in ("discussion_points", "key_decisions"):
+            seen: set = set()
+            for p in partials:
+                for item in p.get(field, []):
+                    key = str(item).strip().lower()[:120]
+                    if key not in seen:
+                        seen.add(key)
+                        merged[field].append(item)
+
+        # Merge participants by name
+        by_name: Dict[str, Dict] = {}
+        for p in partials:
+            for participant in p.get("participants", []):
+                name = participant.get("name", "").strip()
+                if not name:
+                    continue
+                if name not in by_name:
+                    by_name[name] = {
+                        "name": name,
+                        "yesterday": [],
+                        "today": [],
+                        "blockers": [],
+                        "action_items": [],
+                        "progress_summary": participant.get("progress_summary", ""),
+                    }
+                entry = by_name[name]
+                for field in ("yesterday", "today", "blockers", "action_items"):
+                    existing_keys = {str(i).strip().lower() for i in entry[field]}
+                    for item in participant.get(field, []):
+                        if str(item).strip().lower() not in existing_keys:
+                            entry[field].append(item)
+                            existing_keys.add(str(item).strip().lower())
+                # Keep first non-trivial progress_summary
+                if not entry["progress_summary"] and participant.get("progress_summary"):
+                    entry["progress_summary"] = participant["progress_summary"]
+
+        merged["participants"] = list(by_name.values())
+        return merged
 
     # ── Ollama API ────────────────────────────────────────────
 
-    def _call_ollama(self, prompt: str) -> str:
+    def _call_ollama(self, prompt: str, num_predict_override: int = None) -> str:
+        effective_predict = num_predict_override if num_predict_override is not None else min(self.num_predict, self.max_output_tokens)
         payload = {
             "model": self.model,
             "prompt": prompt,
@@ -258,7 +505,7 @@ class OllamaLLMEngine:
                 "temperature": self.temperature,
                 "top_p": 0.9,
                 "top_k": 40,
-                "num_predict": self.num_predict,
+                "num_predict": effective_predict,
                 "repeat_penalty": 1.1,
                 # Stop sequences prevent the model from rambling after the JSON
                 "stop": ["\n```", "```\n", "\n\nNote:", "\n\nExplanation:"],
@@ -295,7 +542,7 @@ class OllamaLLMEngine:
                 "LLM hit num_predict token cap (%d). Output was truncated. "
                 "Increase num_predict or reduce transcript length. "
                 "Truncated output will fail JSON parsing.",
-                self.num_predict,
+                effective_predict,
             )
         elif done_reason not in ("stop", "unknown"):
             logger.warning("Unexpected LLM done_reason: '%s'", done_reason)

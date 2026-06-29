@@ -29,7 +29,7 @@ from config import load_config
 from database import Database
 from digest import WeeklyDigestService
 from emailer import EmailService
-from llm_engine import OllamaLLMEngine
+from llm_engine import OllamaLLMEngine, LLMGenerationError
 from parser import TranscriptParser
 from teams_notifier import TeamsNotifier
 from watcher import FileWatcher
@@ -81,8 +81,9 @@ class MeetingIntelligenceSystem:
             temperature          = self.config.ollama.temperature,
             max_retries          = self.config.ollama.max_retries,
             timeout              = self.config.ollama.timeout,
-            max_transcript_chars = getattr(self.config.ollama, "max_transcript_chars", 30000),
-            num_predict          = getattr(self.config.ollama, "num_predict", 8192),
+            max_transcript_chars = self.config.ollama.max_transcript_chars,
+            num_predict          = self.config.ollama.num_predict,
+            max_output_tokens    = self.config.ollama.max_output_tokens,
         )
 
         # Optional notification channels
@@ -299,7 +300,13 @@ class MeetingIntelligenceSystem:
                 self.logger.info("[5/5] Manager morale report skipped (disabled or not configured).")
 
             self.logger.info("✓ Completed: %s", Path(file_path).name)
-
+        except LLMGenerationError as exc:
+            self.logger.error(
+                "\u2717 LLM failed for %s — Teams and email were NOT sent. %s",
+                Path(file_path).name,
+                exc,
+            )
+            self.db.mark_failed(file_path, str(exc))
         except Exception as exc:
             self.logger.error(
                 "✗ Pipeline failed for %s: %s",

@@ -24,9 +24,15 @@ ollama:
   timeout: 450
   # High cap so long meeting transcripts are not truncated unnecessarily.
   max_transcript_chars: 140000
-  # Max output tokens. The cloud proxy maps this to max_tokens — must be a positive integer.
-  # 20000 gives ample room for 21+ participants without truncating mid-JSON.
-  num_predict: 20000
+  # Max output tokens sent to Ollama as num_predict.
+  # IMPORTANT: The gpt-oss:120b-cloud proxy multiplies this value by 10 before forwarding
+  # to the underlying model. The model hard limit is 131072 tokens.
+  # Formula: num_predict x 10 <= 131072  -->  safe maximum = 13107
+  # 13000 gives ample room for 20+ participants without truncating mid-JSON.
+  num_predict: 13000
+  # Hard ceiling enforced in code — num_predict is clamped to this before every request.
+  # Set to the model's documented max output token limit.
+  max_output_tokens: 131072
 
 teams:
   # Set TEAMS_WEBHOOK_URL environment variable — do not put the URL here
