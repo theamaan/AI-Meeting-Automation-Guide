@@ -46,7 +46,7 @@ BEGIN
 
         -- ── Identity & file identity ─────────────────────────
         id                  INT             IDENTITY(1,1)       NOT NULL,
-        file_path           NVARCHAR(900)                       NOT NULL,   -- UNC/absolute path; 900 chars = SQL Server max index key
+        file_path           NVARCHAR(450)                       NOT NULL,   -- 450 chars × 2 bytes = 900 bytes (within the 1700-byte nonclustered index key limit)
         file_name           NVARCHAR(260)                       NOT NULL,   -- MAX_PATH on Windows
         file_type           NVARCHAR(20)                        NOT NULL,   -- .vtt, .csv, etc.
         file_hash           NVARCHAR(64)                        NULL,       -- SHA-256 hex (64 chars)

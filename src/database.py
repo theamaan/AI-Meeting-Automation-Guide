@@ -32,7 +32,7 @@ IF NOT EXISTS (
 BEGIN
     CREATE TABLE dbo.meetings (
         id                  INT             IDENTITY(1,1)        NOT NULL,
-        file_path           NVARCHAR(900)                        NOT NULL,
+        file_path           NVARCHAR(450)                        NOT NULL,
         file_name           NVARCHAR(260)                        NOT NULL,
         file_type           NVARCHAR(20)                         NOT NULL,
         file_hash           NVARCHAR(64)                         NULL,

@@ -39,7 +39,7 @@ Teams Meeting Recording                   Output
                         →   Teams channel: Interactive Adaptive Card
                               (click each person to expand their updates)
                         →   Email: Clean HTML to all team members
-                        →   SQLite: Full audit trail
+                        →   SQL Server: Full audit trail
                         →   [Optional] Manager email: Confidential morale report
                         →   [Optional] Organizer email: Draft MOM for review & approval
                         →   [Optional] Personal digest: Individual weekly summary email
@@ -73,12 +73,12 @@ OneDrive Sync Folder
                          ┌─────────┼─────────┐
                          ▼         ▼          ▼
                    [database.py] [teams_   [emailer.py]
-                    SQLite       notifier]  SMTP + Jinja2
+                    SQL Server   notifier]  SMTP + Jinja2
                                  Adaptive   HTML Template
                                  Card
 
   Weekly digest (Feature 10, manual / Task Scheduler):
-  --weekly-digest → [digest.py] → SQLite query → LLM narrative
+  --weekly-digest → [digest.py] → SQL Server query → LLM narrative
                                → Individual email per participant
 ```
 
@@ -97,6 +97,8 @@ Full architecture detail: [docs/architecture.md](docs/architecture.md)
 | Model | gpt-oss:120b-cloud | `ollama pull gpt-oss:120b-cloud` |
 | Disk space | ~70 GB | For the 120B model |
 | RAM | 16 GB min, 32 GB+ recommended | For 120B model inference |
+| SQL Server | Express 2016+ | Any edition; SSMS for schema setup |
+| ODBC Driver | 17 or 18 for SQL Server | https://aka.ms/downloadmsodbcsql |
 
 ### 1. Install Dependencies
 
@@ -128,6 +130,12 @@ watcher:
 email:
   recipients:
     - "team@yourcompany.com"
+
+database:
+  server: "YOUR-PC-NAME\\SQLEXPRESS"   # match your SSMS server name
+  database: "MeetingSystem"
+  driver: "ODBC Driver 17 for SQL Server"
+  trusted_connection: true              # Windows Authentication
 ```
 
 ### 3. Start Ollama
@@ -170,7 +178,7 @@ AI Meeting Automation Guide/
 ├── src/                         ← All application code
 │   ├── main.py                  ← Entry point & CLI
 │   ├── config.py                ← Settings loader (YAML + env vars)
-│   ├── database.py              ← SQLite persistence
+│   ├── database.py              ← SQL Server persistence (pyodbc)
 │   ├── watcher.py               ← File system monitor
 │   ├── parser.py                ← Transcript extraction (.vtt)
 │   ├── llm_engine.py            ← Ollama API + JSON enforcement + sentiment
@@ -206,10 +214,11 @@ AI Meeting Automation Guide/
 │   └── test_digest.py           ← [Feature 10] Weekly digest tests
 │
 ├── scripts/
-│   ├── setup.bat                ← First-time setup
-│   └── run.bat                  ← Start with env loading
+│   ├── setup.bat                         ← First-time setup
+│   ├── run.bat                           ← Start with env loading
+│   ├── create_sqlserver_schema.sql       ← Run once in SSMS to create DB + schema
+│   └── migrate_sqlite_to_sqlserver.py    ← One-time data migration from old SQLite DB
 │
-├── data/                        ← Auto-created (meetings.db)
 ├── logs/                        ← Auto-created (meeting_system.log)
 └── requirements.txt
 ```
@@ -242,11 +251,16 @@ AI Meeting Automation Guide/
 | `digest.enabled` | `false` | Enable weekly digest emails (Feature 10) |
 | `digest.days_back` | `7` | Default date range for weekly digest |
 | `digest.participant_emails` | `{}` | Map of `"Full Name": "email@company.com"` for digest recipients |
+| `database.server` | `ICS-LT-H3J9R73\SQLEXPRESS` | SQL Server instance name |
+| `database.database` | `MeetingSystem` | Target database name |
+| `database.driver` | `ODBC Driver 17 for SQL Server` | Installed ODBC driver name |
+| `database.trusted_connection` | `true` | `true` = Windows Auth; `false` = SQL Auth |
+| `database.connection_timeout` | `30` | Seconds before connection attempt times out |
 
 ### Environment Variables (secrets only)
 
 | Variable | Description |
-|----------|-------------|
+|----------|--------------|
 | `TEAMS_WEBHOOK_URL` | Teams Incoming Webhook URL |
 | `EMAIL_USERNAME` | SMTP login email address |
 | `EMAIL_PASSWORD` | SMTP app password |
@@ -254,6 +268,12 @@ AI Meeting Automation Guide/
 | `OLLAMA_BASE_URL` | Override Ollama URL |
 | `SENTIMENT_MANAGER_EMAIL` | Override `sentiment.manager_email` from env |
 | `APPROVAL_ORGANIZER_EMAIL` | Override `approval.organizer_email` from env |
+| `DB_SERVER` | Override `database.server` |
+| `DB_NAME` | Override `database.database` |
+| `DB_DRIVER` | Override `database.driver` |
+| `DB_TRUSTED_CONNECTION` | `true` / `false` — override auth mode |
+| `DB_USERNAME` | SQL Authentication username (leave blank for Windows Auth) |
+| `DB_PASSWORD` | SQL Authentication password (leave blank for Windows Auth) |
 
 ---
 
@@ -325,7 +345,7 @@ HTML template uses `autoescape=True` to prevent XSS.
 - `send_draft_approval_email()` — Draft MOM with approve/reject links to organizer (Feature 9)
 - `send_digest_email()` — Personal weekly summary to individual participant (Feature 10)
 
-### `database.py` — SQLite Storage
+### `database.py` — SQL Server Storage
 
 Stores every processed meeting:
 - Raw transcript text
@@ -335,9 +355,9 @@ Stores every processed meeting:
 - `sentiment_json` — stored sentiment analysis result per meeting (Feature 8)
 - `approval_token`, `approval_status` — draft approval workflow state (Feature 9)
 
-`INSERT OR IGNORE` ensures duplicate files are never processed twice.
+A unique constraint on `file_path` prevents duplicate processing. The `record_meeting()` method returns the existing row id for already-registered files, and deletes-then-reinserts when the same filename contains new content (different hash).
 
-**New query methods:**
+**Query methods:**
 - `update_sentiment()`, `set_awaiting_approval()`, `get_pending_approval_by_token()`, `set_approval_result()`, `get_meetings_by_date_range()`
 
 ### `approval_server.py` — Draft Approval Callback Server *(Feature 9)*
@@ -355,7 +375,7 @@ Runs in a background daemon thread, started once at application startup.
 
 Orchestrates the end-of-week summary workflow when invoked via `--weekly-digest`.
 
-- Queries SQLite for all meetings in the configured date range
+- Queries SQL Server for all meetings in the configured date range
 - Builds per-participant aggregated data: attended/absent counts, action items, blockers
 - Detects **recurring blockers** (same blocker text appears in ≥2 separate meetings)
 - Calls `llm_engine.generate_digest_narrative()` for a personalised AI paragraph
@@ -520,9 +540,9 @@ python src\main.py --weekly-digest --digest-days 14
 ## Real-World Edge Cases
 
 | Scenario | How It's Handled |
-|----------|-----------------|
+|----------|------------------|
 | OneDrive still syncing | 5-min delay timer; resets on file change |
-| Same file processed twice | `INSERT OR IGNORE` + `is_processed()` |
+| Same file processed twice | Unique constraint + `is_processed()` check |
 | Speaker name variations | Known participants list in prompt for normalization |
 | `[inaudible]` in transcript | Regex-cleaned before LLM processing |
 | Very long meeting (2hr+) | Transcript truncated, keeping start + end |
@@ -530,14 +550,16 @@ python src\main.py --weekly-digest --digest-days 14
 | Participant not in transcript | Added to MOM with empty arrays |
 | Teams webhook unreachable | Logged warning; email still sends |
 | SMTP auth failure | Specific error + guidance message |
-| .mp4 without speaker IDs | Whisper transcribes; LLM extracts without names |
-| Partial meeting (late join) | Known participants list fills gaps || Sentiment LLM fails | All-neutral fallback returned; pipeline continues unaffected |
+| Partial meeting (late join) | Known participants list fills gaps |
+| Sentiment LLM fails | All-neutral fallback returned; pipeline continues unaffected |
 | Approval gate not responded to | Auto-approved or auto-rejected based on `auto_approve` setting after timeout |
 | Approval server port conflict | Startup error logged; approval feature gracefully disabled |
+| SQL Server connection fails | Startup error logged with connection details; process exits cleanly |
 | No meetings in digest date range | Warning logged; returns empty dict; no emails sent |
 | Participant absent from all meetings | Digest email shows 0 attended, no action items, still sent |
 | Participant missing from `mom_json` | Counted as attended (silent); no action items collected |
 | Recurring blocker text varies slightly | Case-insensitive exact-match; minor wording differences not merged |
+
 ---
 
 ## Deployment
@@ -593,15 +615,13 @@ All approval server tests use `localhost:0` (OS-assigned port) — no port confl
 | Component | Technology | Why |
 |-----------|-----------|-----|
 | Language | Python 3.10+ | Rich ecosystem, watchdog, SMTP built-in |
-| File watching | watchdog 4.0 | Cross-platform, battle-tested |
-| Audio transcription | faster-whisper | CPU-friendly, int8 quantization |
-| VTT parsing | webvtt-py | Handles Teams VTT format |
-| DOCX parsing | python-docx | Reads Teams Word exports |
+| File watching | watchdog 6.0+ | Cross-platform, battle-tested |
 | LLM | Ollama + gpt-oss:120b | Local inference, no cloud |
 | Teams integration | Adaptive Cards + Incoming Webhook | No bot framework needed |
 | Email | smtplib + Jinja2 | Zero dependencies on external services |
-| Storage | SQLite | File-based, zero config, fast |
+| Storage | SQL Server (pyodbc) | Enterprise-grade, concurrent access, scalable |
 | Config | PyYAML | Human-readable, env var override |
+| HTTP server | `http.server` (stdlib) | Localhost-only approval callbacks, zero dependencies |
 
 ---
 

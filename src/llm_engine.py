@@ -28,11 +28,22 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = (
-    "You are an expert enterprise meeting analyst. "
-    "Your ONLY job is to output valid JSON. "
-    "Do NOT output any explanation, markdown, code blocks, or extra text. "
-    "Start your response with { and end with }. "
-    "Never hallucinate. Only use information explicitly stated in the transcript."
+    "You are an expert enterprise meeting analyst specializing in extracting "
+    "complete and accurate Minutes of Meeting (MOM). "
+    "Your ONLY responsibility is to analyze the transcript and return a single "
+    "valid JSON object. "
+    "Do NOT output explanations, markdown, code blocks, comments, or any text "
+    "outside the JSON object. "
+    "The response MUST begin with '{' and end with '}'. "
+    "Never hallucinate, infer, assume, summarize away, or fabricate information. "
+    "Only use information explicitly stated in the transcript. "
+    "Capture every explicit discussion point including decisions, action items, "
+    "instructions, commands, requests, questions, answers, concerns, blockers, "
+    "risks, suggestions, approvals, rejections, follow-ups, reminders, next steps, "
+    "assignments, deadlines, and commitments. "
+    "If multiple people provide different opinions or instructions, preserve each "
+    "individually instead of merging them into a summary. "
+    "Do not omit details simply because they appear minor."
 )
 
 MOM_PROMPT_TEMPLATE = """Analyze this meeting transcript and produce a structured Minutes of Meeting (MOM) report.
@@ -49,21 +60,64 @@ ATTENDANCE STATUS:
 ─────────────────
 
 STRICT EXTRACTION RULES:
-1. Extract per participant: yesterday, today, blockers, action_items, progress_summary
-   - yesterday  : what they said they completed or were working on previously
-   - today      : what they said they will do or are currently doing
-   - blockers   : any impediments, blockers, waiting-ons, or risks they raised
-   - action_items: specific tasks assigned TO them (include deadline if mentioned)
-   - progress_summary: 2-3 factual sentences about their status
-2. If a participant did not speak or was not mentioned, include them with all empty arrays.
-3. Do NOT infer. Do NOT fill in gaps. Use [] for missing data.
-4. Keep each list item under 20 words.
-5. overall_status = "ALL_CLEAR" if no blockers exist across all participants, else "HAS_ISSUES"
-6. key_decisions = specific decisions made in the meeting (not action items)
-7. ATTENDANCE RULES (apply only when attendance data is provided above):
-   - ABSENT participants : set progress_summary = "Absent from this meeting." and all arrays to []
-   - SILENT participants : set progress_summary = "Attended but did not speak." and all arrays to []
-   - Do NOT assume anyone is absent unless they are explicitly listed as ABSENT above
+1. Extract every participant's updates exactly as discussed.
+2. For every participant extract:
+   - yesterday        : what they completed or were working on previously
+   - today            : what they will do or are currently working on
+   - blockers         : anything preventing or impeding their progress
+   - action_items     : every task, request, or instruction directed at them
+   - progress_summary : factual summary of their status and contributions
+3. "Action Items" include:
+   - tasks assigned to that participant
+   - requests made to them
+   - commands or instructions given to them
+   - follow-up work they are responsible for
+   - deliverables, investigations, documentation, testing, deployment, or review work
+   - anything they were explicitly asked or instructed to do
+4. Blockers include:
+   - technical issues
+   - waiting for approvals or dependencies
+   - missing access or credentials
+   - unanswered questions
+   - risks and concerns
+   - anything preventing progress
+5. Extract ALL meeting-level information into discussion_points, including:
+   - decisions made
+   - instructions from managers or leads
+   - commands given during the meeting
+   - questions asked and answers provided
+   - announcements and reminders
+   - approvals and rejections
+   - important technical discussions
+   - follow-up topics and future plans
+   - deadlines and commitments
+   - any discussion that is not captured as an action item or blocker
+6. Do NOT combine multiple discussion points into one summary if they were discussed separately.
+7. Preserve chronological order wherever possible.
+8. If multiple tasks are assigned to one participant, include every task separately.
+9. Never infer missing information.
+10. If something was mentioned, include it.
+11. If a participant did not speak or was not mentioned, include them with empty arrays.
+12. Use [] instead of null for missing lists.
+13. Keep list items concise but complete — prioritize accuracy over brevity.
+14. overall_status = "ALL_CLEAR" only if no blockers exist across the entire meeting.
+    Otherwise use "HAS_ISSUES".
+15. key_decisions must contain only decisions actually made.
+    Do NOT place action items or discussion points here.
+16. ATTENDANCE RULES:
+    - ABSENT participants:
+      progress_summary = "Absent from this meeting."
+      all arrays = []
+    - SILENT participants:
+      progress_summary = "Attended but did not speak."
+      all arrays = []
+    - Never assume someone is absent unless explicitly listed as ABSENT above.
+
+IMPORTANT:
+Every explicit discussion point in the transcript should appear somewhere in the output.
+Do not omit manager instructions, participant requests, commands, technical discussions,
+clarifications, recommendations, reminders, decisions, or follow-up conversations simply
+because they seem minor. Favor completeness over brevity while remaining factual.
 
 OUTPUT — return ONLY this JSON, nothing else:
 {{
@@ -71,7 +125,11 @@ OUTPUT — return ONLY this JSON, nothing else:
   "meeting_date": "{meeting_date}",
   "overall_status": "ALL_CLEAR",
   "status_reason": "",
-  "team_summary": "2-3 sentence team-wide summary",
+  "team_summary": "A factual summary covering every major discussion topic, key progress updates, important concerns, decisions, and overall direction of the meeting.",
+  "discussion_points": [
+    "Discussion point 1",
+    "Discussion point 2"
+  ],
   "key_decisions": ["decision1"],
   "follow_up_date": null,
   "participants": [
@@ -339,6 +397,7 @@ class OllamaLLMEngine:
         data.setdefault("overall_status", "ALL_CLEAR")
         data.setdefault("status_reason", "")
         data.setdefault("team_summary", "")
+        data.setdefault("discussion_points", [])
         data.setdefault("key_decisions", [])
         data.setdefault("follow_up_date", None)
         data.setdefault("participants", [])
@@ -457,6 +516,7 @@ class OllamaLLMEngine:
                 "Automated MOM generation failed. "
                 "Please review the transcript manually."
             ),
+            "discussion_points": [],
             "key_decisions": [],
             "follow_up_date": None,
             "participants": [
