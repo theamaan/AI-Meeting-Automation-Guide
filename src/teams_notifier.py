@@ -171,7 +171,9 @@ class TeamsNotifier:
             candidate_mom = deepcopy(mom)
             candidate_mom["participants"] = candidate
             candidate_mom["team_summary"] = ""    # participant cards don't include summary
-            candidate_mom["key_decisions"] = []   # participant cards don't include decisions            candidate_mom["status_reason"] = ""   # participant cards don't include issues banner            candidate_payload = self._build_payload(candidate_mom, attendance=attendance)
+            candidate_mom["key_decisions"] = []   # participant cards don't include decisions
+            candidate_mom["status_reason"] = ""   # participant cards don't include issues banner
+            candidate_payload = self._build_payload(candidate_mom, attendance=None)
             candidate_size = self._payload_size(candidate_payload)
 
             if candidate_size <= self.TARGET_PAYLOAD_BYTES or not current_chunk:
