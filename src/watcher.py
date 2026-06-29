@@ -115,6 +115,9 @@ class RecordingEventHandler(FileSystemEventHandler):
         logger.debug("Attendance CSV detected but no matching recording found: %s", Path(csv_path).name)
 
     def _schedule(self, file_path: str):
+        # Normalise path so forward/backslash and case variants all map to the
+        # same key — watchdog delivers D:/... while Path.glob delivers D:\...
+        file_path = os.path.normcase(os.path.abspath(file_path))
         with self._lock:
             # Cancel any existing pending timer for this file
             if file_path in self._pending:

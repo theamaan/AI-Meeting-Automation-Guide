@@ -78,8 +78,11 @@ class TeamsNotifier:
             part_mom["meeting_title"] = f"{title} (Part {idx}/{n_parts})"
             part_mom["team_summary"] = ""    # held for summary card
             part_mom["key_decisions"] = []   # held for summary card
+            part_mom["status_reason"] = ""   # held for summary card
 
-            part_payload = self._build_payload(part_mom, attendance=attendance)
+            # attendance=None: meeting-wide stats (spoke/silent/absent) belong on
+            # the Summary card only — participant cards show per-card people count.
+            part_payload = self._build_payload(part_mom, attendance=None)
             part_size = self._payload_size(part_payload)
 
             if part_size > self.TARGET_PAYLOAD_BYTES:
@@ -88,7 +91,7 @@ class TeamsNotifier:
                     idx, n_parts, part_size,
                 )
                 part_mom = self._emergency_strip(part_mom)
-                part_payload = self._build_payload(part_mom, attendance=attendance)
+                part_payload = self._build_payload(part_mom, attendance=None)
                 part_size = self._payload_size(part_payload)
 
             if part_size > self.MAX_TEAMS_PAYLOAD_BYTES:
@@ -111,7 +114,9 @@ class TeamsNotifier:
         summary_mom = deepcopy(compact_mom)
         summary_mom["participants"] = []
         summary_mom["meeting_title"] = f"{title} — Meeting Summary"
-        summary_payload = self._build_payload(summary_mom, attendance=None)
+        # Pass full attendance so the Summary card shows spoke/silent/absent stats
+        # and the ⚠️ issues banner — meeting-level info belongs here, not on participant cards.
+        summary_payload = self._build_payload(summary_mom, attendance=attendance)
         summary_size = self._payload_size(summary_payload)
 
         if summary_size > self.MAX_TEAMS_PAYLOAD_BYTES:
@@ -119,7 +124,7 @@ class TeamsNotifier:
                 "Summary card is %d bytes — truncating team_summary to fit.", summary_size
             )
             summary_mom["team_summary"] = summary_mom["team_summary"][:300] + "…"
-            summary_payload = self._build_payload(summary_mom, attendance=None)
+            summary_payload = self._build_payload(summary_mom, attendance=attendance)
             summary_size = self._payload_size(summary_payload)
 
         validated_parts.append(("Summary", 0, summary_payload, summary_size))
@@ -166,8 +171,7 @@ class TeamsNotifier:
             candidate_mom = deepcopy(mom)
             candidate_mom["participants"] = candidate
             candidate_mom["team_summary"] = ""    # participant cards don't include summary
-            candidate_mom["key_decisions"] = []   # participant cards don't include decisions
-            candidate_payload = self._build_payload(candidate_mom, attendance=attendance)
+            candidate_mom["key_decisions"] = []   # participant cards don't include decisions            candidate_mom["status_reason"] = ""   # participant cards don't include issues banner            candidate_payload = self._build_payload(candidate_mom, attendance=attendance)
             candidate_size = self._payload_size(candidate_payload)
 
             if candidate_size <= self.TARGET_PAYLOAD_BYTES or not current_chunk:
